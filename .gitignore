@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+
+# Secrets: every real env file stays local; only the *.example templates are committed
+.env
+.env.*
+!.env.example
+
+# Build and test output
+frontend/dist/
+frontend/test-results/
+frontend/playwright-report/
+frontend/blob-report/
+frontend/playwright/.cache/
+coverage/
+
+# Supabase CLI local state
+supabase/.temp/
+supabase/.branches/
+
+# Editor / OS
+.DS_Store
+.vscode/
+.idea/
+*.log

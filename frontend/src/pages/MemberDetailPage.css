@@ -1,0 +1,995 @@
+.member-detail-page {
+  max-width: 920px;
+  margin: 0 auto;
+}
+
+.member-detail-skeleton {
+  height: 500px;
+  border-radius: var(--radius-el);
+  margin-top: 1rem;
+  background: linear-gradient(90deg, var(--color-neutral-50) 25%, var(--color-neutral-150) 37%, var(--color-neutral-50) 63%);
+  background-size: 400% 100%;
+  animation: member-detail-shimmer 1.4s ease infinite;
+}
+
+@keyframes member-detail-shimmer {
+  0% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0 50%;
+  }
+}
+
+.member-detail-load-error {
+  text-align: center;
+  padding: 3rem 1rem;
+  color: var(--color-text-secondary);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.member-detail-retry {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 44px;
+  background: linear-gradient(to bottom, var(--cta-from), var(--cta-to));
+  color: var(--color-text-inverse);
+  border: none;
+  border-radius: var(--radius-el);
+  padding: 0.6rem 1.25rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.member-detail-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.member-detail-edit-button,
+.member-detail-cancel,
+.member-detail-save,
+.member-detail-delete-confirm {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 44px;
+  border-radius: var(--radius-el);
+  padding: 0.5rem 1.1rem;
+  font-weight: 600;
+  font-size: 0.82rem;
+  cursor: pointer;
+  transition: background-color 0.15s ease, opacity 0.15s ease;
+}
+
+.member-detail-edit-button {
+  background: var(--color-neutral-0);
+  border: 1px solid var(--color-border-default);
+  color: var(--color-text-primary);
+}
+
+.member-detail-edit-button:hover {
+  background: var(--color-surface-page);
+}
+
+.member-detail-cancel {
+  background: var(--color-neutral-0);
+  border: 1px solid var(--color-border-default);
+  color: var(--color-text-secondary);
+}
+
+.member-detail-cancel:hover:not(:disabled) {
+  background: var(--color-surface-page);
+}
+
+.member-detail-cancel:disabled {
+  color: var(--color-text-disabled);
+  cursor: not-allowed;
+}
+
+.member-detail-save {
+  background: linear-gradient(to bottom, var(--cta-from), var(--cta-to));
+  color: var(--color-text-inverse);
+  border: none;
+}
+
+.member-detail-save:hover:not(:disabled) {
+  opacity: 0.92;
+}
+
+.member-detail-save:disabled {
+  background: var(--color-interactive-disabled-bg);
+  color: var(--color-interactive-disabled-text);
+  cursor: not-allowed;
+}
+
+.member-detail-delete-confirm {
+  background: var(--color-status-danger-text);
+  color: var(--color-text-inverse);
+  border: none;
+}
+
+.member-detail-delete-confirm:disabled {
+  background: var(--color-interactive-disabled-bg);
+  color: var(--color-interactive-disabled-text);
+  cursor: not-allowed;
+}
+
+@keyframes member-detail-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.member-detail-spin {
+  animation: member-detail-spin 0.8s linear infinite;
+}
+
+.member-detail-banner-error {
+  background: var(--color-status-danger-bg-subtle);
+  border: 1px solid var(--color-status-danger-border);
+  color: var(--color-status-danger-text);
+  padding: 0.75rem 1rem;
+  border-radius: var(--radius-el);
+  margin: 0.75rem 0;
+  font-size: 0.85rem;
+}
+
+.member-detail-banner-success {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  background: var(--color-status-success-bg-subtle);
+  border: 1px solid var(--color-status-success-border);
+  color: var(--color-status-success-text-deep);
+  padding: 0.75rem 1rem;
+  border-radius: var(--radius-el);
+  margin: 0.75rem 0;
+  font-size: 0.85rem;
+}
+
+.member-detail-banner-dismiss {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  min-height: 32px;
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  border-radius: 6px;
+}
+
+.member-detail-banner-dismiss:hover {
+  background: rgba(0, 0, 0, 0.06);
+}
+
+/* Hero */
+
+.member-detail-hero {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin: 1rem 0 1.5rem;
+  padding: 1.25rem;
+  background: var(--color-neutral-0);
+  border: 1px solid var(--color-border-card);
+  border-radius: var(--radius-card);
+  flex-wrap: wrap;
+}
+
+.member-detail-avatar-wrap {
+  position: relative;
+  display: flex;
+  flex-shrink: 0;
+}
+
+.member-detail-avatar,
+.member-detail-avatar-img {
+  width: 68px;
+  height: 68px;
+  border-radius: var(--radius-tile);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  color: var(--color-text-inverse);
+  font-size: 1.4rem;
+  object-fit: cover;
+}
+
+.member-detail-avatar-clickable {
+  cursor: zoom-in;
+  transition: transform 0.1s ease;
+}
+
+.member-detail-avatar-clickable:hover {
+  transform: scale(1.05);
+}
+
+.member-detail-photo-button {
+  position: absolute;
+  bottom: -4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border-radius: 50%;
+  background: var(--color-neutral-0);
+  border: 1px solid var(--color-border-default);
+  color: var(--color-text-secondary);
+  font: inherit;
+  cursor: pointer;
+  box-shadow: 0 1px 3px var(--color-shadow);
+}
+
+/* Explicit position classes rather than :first-of-type/:last-of-type — the camera
+   trigger is a <button> and the upload trigger is a <label>, two different tag names,
+   so "first/last of type" would count each independently (both trivially match both
+   rules) instead of "first/last of these two controls." */
+.member-detail-photo-button-camera {
+  right: 26px;
+}
+
+.member-detail-photo-button-upload {
+  right: -4px;
+}
+
+.member-detail-hero-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-width: 0;
+  flex: 1;
+}
+
+.member-detail-name-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.member-detail-name {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.member-detail-hero-meta-1 {
+  margin: 0.25rem 0 0;
+  font-size: 0.82rem;
+  color: var(--color-text-secondary);
+}
+
+.member-detail-hero-meta-2 {
+  margin: 0.2rem 0 0;
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+}
+
+.member-detail-photo-status {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+}
+
+.member-detail-photo-error {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--color-status-danger-text);
+}
+
+.member-detail-inline-retry {
+  background: none;
+  border: none;
+  color: var(--tint-ink);
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 0;
+  font-size: 0.78rem;
+}
+
+.member-detail-hero-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+/* Status badges (.status-badge-*) live in styles/status.css — do not re-declare them here. */
+
+/* Layout */
+
+.member-detail-main {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+/* Medical/Emergency contact (left) · Personal (right, collapsible) — member-detail-page
+   design §1's `.gm-detail-grid`: 1fr/1.15fr from 760px, single column below. This is a
+   narrower, purpose-built breakpoint for just this row (not the page's other 1024px tier)
+   per the design spec's own literal CSS. */
+.member-detail-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem;
+}
+
+@media (min-width: 760px) {
+  .member-detail-grid {
+    grid-template-columns: 1fr 1.15fr;
+    align-items: start;
+  }
+}
+
+.member-detail-grid-col {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-width: 0;
+}
+
+/* Sections */
+
+.member-detail-section {
+  background: var(--color-neutral-0);
+  border: 1px solid var(--color-border-card);
+  border-radius: 16px;
+  padding: 1.1rem 1.25rem;
+  margin: 0;
+}
+
+.member-detail-section legend {
+  font-weight: 700;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-muted);
+  padding: 0 0.25rem;
+}
+
+.member-detail-section-title {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--tint-ink);
+  margin: 0 0 0.75rem;
+}
+
+.member-detail-history-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.75rem;
+}
+
+.member-detail-history-header .member-detail-section-title {
+  margin: 0;
+}
+
+/* View mode */
+
+.member-detail-view-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0;
+  margin: 0;
+}
+
+.member-detail-view-field {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.6rem 0;
+  border-bottom: 1px solid var(--color-border-divider);
+}
+
+.member-detail-view-field:last-child {
+  border-bottom: none;
+}
+
+.member-detail-view-field dt {
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+.member-detail-view-field dd {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-size: 0.82rem;
+  font-weight: 500;
+  text-align: right;
+  word-break: break-word;
+}
+
+/* Personal card's progressive-disclosure toggle (member-detail-page design §6). */
+.member-detail-disclosure-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin-top: 0.75rem;
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--tint-ink);
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* Edit mode fields */
+
+.member-detail-required {
+  color: var(--color-status-danger-text-deep);
+  font-weight: 700;
+}
+
+.member-detail-field-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.75rem;
+}
+
+@media (min-width: 480px) {
+  .member-detail-field-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.member-detail-field-span-2 {
+  grid-column: 1 / -1;
+}
+
+.member-detail-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.member-detail-field label,
+.member-detail-chip-label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+
+.member-detail-field input,
+.member-detail-field select,
+.member-detail-field textarea,
+.member-detail-section select,
+.member-detail-section textarea {
+  background: var(--color-surface-input);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-el);
+  padding: 0.6rem 0.75rem;
+  font-size: 0.85rem;
+  color: var(--color-text-primary);
+  min-height: 44px;
+}
+
+.member-detail-field textarea,
+.member-detail-section textarea {
+  min-height: 78px;
+  resize: vertical;
+}
+
+.member-detail-field input:focus,
+.member-detail-field select:focus,
+.member-detail-field textarea:focus {
+  outline: none;
+  border-color: var(--tint-accent);
+  box-shadow: 0 0 0 3px var(--tint-focus-ring);
+}
+
+.member-detail-chip-row {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-top: 0.3rem;
+}
+
+.member-detail-chip {
+  min-height: 44px;
+  padding: 0.5rem 1rem;
+  border-radius: var(--radius-el);
+  border: 1px solid var(--color-border-default);
+  background: var(--color-neutral-0);
+  color: var(--color-text-secondary);
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+
+.member-detail-chip-selected {
+  background: var(--tint-pill-bg);
+  border-color: var(--tint-border);
+  color: var(--tint-on-pill);
+  font-weight: 700;
+}
+
+/* Doctor's-care toggle switch — same pattern as AddMemberPage */
+.member-detail-toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  cursor: pointer;
+  color: var(--color-text-primary);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.member-detail-toggle {
+  display: inline-flex;
+  align-items: center;
+  width: 44px;
+  height: 24px;
+  border-radius: 999px;
+  background: var(--color-neutral-200);
+  padding: 2px;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+  flex-shrink: 0;
+}
+
+.member-detail-toggle-on {
+  background: var(--tint-accent);
+}
+
+.member-detail-toggle-knob {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--color-neutral-0);
+  box-shadow: 0 1px 3px var(--color-shadow);
+  transition: transform 0.15s ease;
+}
+
+.member-detail-toggle-on .member-detail-toggle-knob {
+  transform: translateX(20px);
+}
+
+.member-detail-error {
+  color: var(--color-status-danger-text-deep);
+  font-size: 0.75rem;
+  margin: 0;
+}
+
+.member-detail-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+
+.member-detail-delete-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 44px;
+  background: none;
+  border: 1px solid var(--color-status-danger-border);
+  color: var(--color-status-danger-text);
+  border-radius: var(--radius-el);
+  padding: 0.5rem 1.1rem;
+  font-weight: 600;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+
+.member-detail-delete-link:hover {
+  background: var(--color-status-danger-bg-subtle);
+}
+
+/* Current Add-ons / Subscription History */
+
+.member-detail-empty-inline {
+  color: var(--color-text-secondary);
+  text-align: center;
+  padding: 1rem;
+  margin: 0;
+}
+
+.member-detail-add-sub-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 44px;
+  background: var(--color-neutral-0);
+  border: 1px solid var(--color-border-default);
+  color: var(--color-text-primary);
+  border-radius: var(--radius-el);
+  padding: 0 1rem;
+  font-weight: 600;
+  font-size: 0.82rem;
+  text-decoration: none;
+}
+
+.member-detail-add-sub-link:hover {
+  background: var(--color-surface-page);
+}
+
+.member-detail-item-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.member-detail-item-name {
+  font-weight: 700;
+  font-size: 1.05rem;
+  color: var(--color-text-primary);
+}
+
+.member-detail-item-detail {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--color-text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.member-detail-item-amount {
+  margin: 0;
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.member-detail-progress-track {
+  width: 100%;
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.6);
+  overflow: hidden;
+  margin-top: 0.5rem;
+}
+
+.member-detail-progress-fill {
+  width: 100%;
+  height: 100%;
+  background: var(--tint-accent);
+  border-radius: 999px;
+  transform-origin: left;
+  transition: transform 0.2s ease;
+}
+
+.member-detail-progress-label {
+  margin: 0.25rem 0 0;
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+}
+
+.member-detail-renew-button {
+  min-height: 36px;
+  display: inline-flex;
+  align-items: center;
+  background: linear-gradient(to bottom, var(--cta-from), var(--cta-to));
+  color: var(--color-text-inverse);
+  border-radius: var(--radius-el);
+  padding: 0 1rem;
+  font-weight: 600;
+  font-size: 0.8rem;
+  text-decoration: none;
+}
+
+.member-detail-renew-button:hover {
+  opacity: 0.92;
+}
+
+.member-detail-renew-button-danger {
+  background: var(--color-status-danger-text);
+}
+
+/* Merged profile+membership card's lower strip (v2 - design_handoff_flexhub_v2/README.md
+   §4) - a full-width row wrapping onto its own line inside .member-detail-hero's flex-wrap
+   layout, its background/border switching on membership state (active/expired/no plan). */
+.member-detail-membership-strip {
+  flex-basis: 100%;
+  border-radius: var(--radius-el);
+  padding: 1rem;
+  margin-top: 0.25rem;
+}
+
+.member-detail-membership-strip-active {
+  background: linear-gradient(to bottom, var(--tint-card-from), var(--tint-card-to));
+  border: 1px solid var(--tint-border);
+}
+
+.member-detail-membership-strip-expired {
+  background: var(--color-status-danger-bg-subtle);
+  border: 1px solid var(--color-status-danger-border);
+}
+
+.member-detail-strip-blocked {
+  margin: 0.4rem 0 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--color-status-danger-text);
+}
+
+.member-detail-strip-label {
+  margin: 0 0 0.4rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--tint-ink);
+}
+
+.member-detail-strip-label-expired {
+  color: var(--color-status-danger-text);
+}
+
+.member-detail-membership-strip-none {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.6rem;
+  text-align: center;
+  padding: 1.5rem 1rem;
+  border: 1px dashed var(--color-neutral-300);
+  background: var(--color-neutral-75);
+}
+
+.member-detail-strip-empty-text {
+  margin: 0;
+  color: var(--color-text-secondary);
+}
+
+.member-detail-addon-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.member-detail-addon-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-height: 44px;
+  background: var(--color-surface-page);
+  border-radius: var(--radius-el);
+  padding: 0.5rem 0.9rem;
+  font-size: 0.85rem;
+}
+
+.member-detail-addon-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.member-detail-addon-name {
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.member-detail-addon-dates {
+  color: var(--color-text-muted);
+  font-size: 0.78rem;
+}
+
+.member-detail-addon-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.6rem;
+  text-align: center;
+  padding: 1.5rem 1rem;
+  border: 1px dashed var(--color-neutral-300);
+  background: var(--color-neutral-75);
+  border-radius: var(--radius-el);
+}
+
+/* Subscription History */
+
+.member-detail-history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.member-detail-history-row {
+  border: 1px solid var(--color-border-card);
+  border-radius: var(--radius-el);
+  overflow: hidden;
+}
+
+.member-detail-history-summary {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: var(--color-surface-page);
+  padding: 0 0.9rem;
+}
+
+.member-detail-history-toggle {
+  flex: 1;
+  /* Same class of bug as AppShell's .app-shell-content (see that file's comment): this
+     row's date/payment-mode/amount text is dynamic and, without this, could refuse to
+     shrink below its content's intrinsic width and push the fixed .member-detail-history-edit
+     sibling out of the row, or overflow past it, at some widths during a resize. */
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 44px;
+  background: none;
+  border: none;
+  padding: 0.6rem 0;
+  cursor: pointer;
+  font-size: 0.85rem;
+  color: var(--color-text-primary);
+  text-align: left;
+}
+
+.member-detail-history-edit {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  min-height: 44px;
+  background: none;
+  border: none;
+  font-size: 0.78rem;
+  color: var(--tint-ink);
+  cursor: pointer;
+  padding: 0 0.5rem;
+}
+
+.member-detail-history-edit-form {
+  padding: 0.75rem 0.9rem;
+  border-top: 1px solid var(--color-border-card);
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.member-detail-history-edit-form label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+
+.member-detail-history-items {
+  padding: 0.6rem 0.9rem 0.9rem 2.2rem;
+  border-top: 1px solid var(--color-border-card);
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.member-detail-history-item {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--color-text-secondary);
+}
+
+.member-detail-shared-note {
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+
+/* Delete confirmation dialog */
+
+.member-detail-delete-backdrop {
+  position: fixed;
+  inset: 0;
+  background: var(--color-backdrop);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+  padding: 1.5rem;
+}
+
+.member-detail-delete-dialog {
+  background: var(--color-neutral-0);
+  border-radius: var(--radius-card);
+  padding: 1.5rem;
+  width: 100%;
+  max-width: 420px;
+  box-shadow: 0 20px 40px var(--color-shadow);
+}
+
+.member-detail-delete-dialog h2 {
+  margin-top: 0;
+}
+
+.member-detail-delete-dialog p {
+  color: var(--color-text-secondary);
+}
+
+.member-detail-purge-label {
+  display: block;
+  margin: 1rem 0 0.4rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.member-detail-purge-input {
+  width: 100%;
+  min-height: 44px;
+  box-sizing: border-box;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--color-status-danger-border);
+  border-radius: var(--radius-el);
+  background: var(--color-neutral-0);
+  color: var(--color-text-primary);
+}
+
+/* Phone layout (design_handoff_flexhub_mobile README, "Member Detail"). Pure styling on the same markup — it
+   must stay at the END of this file so it overrides the desktop rules above at equal specificity. Below 760px
+   (the same cut-off as the two-column grid): */
+@media (max-width: 759px) {
+  .member-detail-hero {
+    align-items: flex-start;
+  }
+
+  /* The identity text sits beside the avatar. Without this the actions row (Edit / Delete, flex-shrink: 0)
+     took half the card and the name and member number wrapped one word per line underneath it. */
+  .member-detail-hero-actions {
+    flex: 1 1 100%;
+  }
+
+  .member-detail-hero-actions > * {
+    flex: 1;
+    justify-content: center;
+  }
+
+  /* "Renew CTA full width inside the membership strip": the plan name and Renew share a flex row on desktop.
+     display: contents lets them join the strip's own column, so Renew can drop to the bottom at full width. */
+  .member-detail-membership-strip-active,
+  .member-detail-membership-strip-expired {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .member-detail-membership-strip .member-detail-item-card-top {
+    display: contents;
+  }
+
+  .member-detail-membership-strip .member-detail-renew-button {
+    order: 1;
+    margin-top: 0.75rem;
+    min-height: 44px;
+    justify-content: center;
+  }
+
+  /* One column in the handoff's order: Personal, Medical, Emergency, Add-ons, Subscription history. The
+     profile form comes before the add-on and history cards, and the grid's right-hand column (Personal) before
+     its left-hand one (Medical, Emergency). Visual order only — the DOM, and so the desktop layout, is untouched. */
+  .member-detail-main > form {
+    order: -1;
+  }
+
+  .member-detail-grid {
+    display: flex;
+    flex-direction: column-reverse;
+  }
+}
