@@ -370,22 +370,26 @@ This keeps the app clean and makes it easier to maintain.
 
 ---
 
-## 14. Recommended migration order
+## 14. Order the schema is built in
 
-1. Create profiles, branches, plans, configuration, members, member_number_sequences, subscriptions, subscription_items, audit_log tables
-2. Add indexes
-3. Add the `prevent_hard_delete()` triggers on `profiles` and `audit_log`
-4. Add `generate_member_number()` and its trigger
-5. Add audit field triggers (`set_audit_fields()`) and the field-level `audit_row_changes()` trigger
-6. Create the `member_current_items` view
-7. Enable RLS
-8. Create policies (including the new tables)
-9. Seed configuration, branches, plans (both categories)
-10. Create Edge Functions
-11. Connect frontend to Supabase
-12. Test admin/staff permissions, including the delete guards and Google OAuth invite-only behavior
+The files in `supabase/migrations/` apply in this order, each building on the one before:
 
-See [database.md §Migrations](./database.md#migrations) for the concrete migration file list.
+1. The `fitfine` schema: tables, indexes, foreign keys and the base functions
+2. Check constraints (text, number and format rules)
+3. The `fitfine_private` schema, with every privilege revoked and then granted by name
+4. The access rule (`access_of`) and the RLS helpers
+5. Trigger functions and every trigger: audit fields, member numbers, field-level audit, hard-delete guards, invite-only profile creation
+6. RLS policies
+7. Views (`member_current_items`, `member_list_view`, `profiles_with_roles`)
+8. The RPCs the Edge Functions and the client call
+9. The `member-photos` bucket and its policies
+10. `create_member` and `set_member_photo`
+11. Guarded real deletes, and the audit trigger extended to deletes
+12. Removal of the `system_admin` role
+
+Then the Edge Functions are deployed, the frontend is connected to the project, and admin/staff permissions are tested, including the delete guards and Google sign-in being invite-only.
+
+See [database.md §Migrations](./database.md#migrations) for the file list.
 
 ---
 

@@ -156,7 +156,7 @@ No admin/staff distinction on read — any active user can view every subscripti
 | REQ-SUB-003 | One `subscription_items` row per item, own `amount_paid` (§2) |
 | REQ-SUB-004 | `subscription_items.shared_member_id` + `chk_subscription_item_shared_member_distinct` (§2); `create-subscription` step 3e (§4) |
 | REQ-SUB-005 | Frontend-only — see [frontend/subscription-management.md §5](../frontend/subscription-management.md#5-overlap-warning-req-sub-005008); no backend implementation |
-| REQ-SUB-006 | `plans.duration_days` nullable CHECK (master-data migration); `end_date` formula (§3) |
+| REQ-SUB-006 | `plans.duration_days` nullable CHECK; `end_date` formula (§3) |
 | REQ-SUB-007 | `create_subscription_with_items()` RPC, checked atomically per-item inside the insert transaction (§4) |
 | REQ-SUB-008 | Frontend-only — see [frontend/subscription-management.md §5](../frontend/subscription-management.md#5-overlap-warning-req-sub-005008); no backend implementation |
 | REQ-SUB-009 | `create-subscription` step 3b/3c/3d (§4); `end_date`/`amount_paid` formulas (§3) |

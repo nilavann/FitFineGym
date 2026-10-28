@@ -194,8 +194,8 @@ select
   current_membership.plan_name as current_membership_plan_name,
   current_membership.end_date  as current_membership_end_date,
   coalesce(current_addons.addon_plan_ids, '{}') as current_addon_plan_ids,
-  m.photo_url  -- appended last, not next to photo_thumbnail_url — see the migration's
-               -- own comment: CREATE OR REPLACE VIEW can only add columns at the end
+  m.photo_url  -- appended last, not next to photo_thumbnail_url:
+               -- CREATE OR REPLACE VIEW can only add columns at the end
 from members m
 left join lateral (
   select mci.plan_id, mci.plan_name, mci.end_date

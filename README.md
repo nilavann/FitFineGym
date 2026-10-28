@@ -438,7 +438,7 @@ Four dev-only suites (nothing here ships to the browser), each aimed at the laye
 | **Unit and component** | Vitest, React Testing Library, jsdom | `lib/` helpers, services, contexts, components, pages, route table, repositories' request shapes | `npm run test:frontend` |
 | **End-to-end** | Playwright on a production build | User flows in real browsers and real CSS, in three projects | `npm run test:e2e:frontend` |
 | **Edge Functions** | Deno test runner | Auth gates, validation, guards and payload shaping for every function | `npm run test:functions` |
-| **Database** | SQL assertions on a throwaway Postgres | Access matrix of every role, constraints, triggers, RLS, RPCs, invite, storage, views, and the validation script | `npm run test:db` |
+| **Database** | SQL assertions on a throwaway Postgres | Access matrix of every role, constraints, triggers, RLS, RPCs, invite, storage and views | `npm run test:db` |
 
 `npm test` runs the frontend, function and database suites. E2E is excluded because it builds the app and is slower. The requirement-by-requirement map for the server-side suites is [spec/test-traceability.md](spec/test-traceability.md).
 

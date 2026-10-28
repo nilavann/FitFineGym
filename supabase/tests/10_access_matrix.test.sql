@@ -105,8 +105,8 @@ begin
   ('audit_log', 'delete', 'delete from fitfine.audit_log', array[]::text[]),
   ('audit_log', 'truncate', 'truncate fitfine.audit_log', array[]::text[]),
 
-  -- views: security_invoker, so they follow the caller's RLS. None is updatable, and the
-  -- validation script checks that nobody holds a write privilege on them.
+  -- views: security_invoker, so they follow the caller's RLS. None is updatable, and only
+  -- SELECT is granted on them.
   ('member_list_view', 'select', 'select 1 from fitfine.member_list_view', array['service_role'] || active),
   ('member_current_items', 'select', 'select 1 from fitfine.member_current_items', array['service_role'] || active),
   ('profiles_with_roles', 'select', 'select 1 from fitfine.profiles_with_roles', array['inactive', 'norole', 'service_role'] || active),

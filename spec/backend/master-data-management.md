@@ -4,7 +4,7 @@
 >
 > **Delete is implemented** — this doc previously scoped Delete out as deferred; it has since shipped (`delete-plan`/`delete-branch` Edge Functions) and is documented in §5 below, not as a future plan.
 >
-> No new tables, columns, or migrations — `branches` and `plans` already exist in full (`database.md`'s master-data migration), created before either admin screen did. This doc is about exposing what's already there, not building new schema.
+> No new tables, columns, or migrations — `branches` and `plans` already exist in full (see `database.md`). This doc is about exposing what's already there, not building new schema.
 
 ---
 

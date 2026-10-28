@@ -558,8 +558,7 @@ create trigger trg_subscriptions_audit        before insert or update on subscri
 create trigger trg_subscription_items_audit   before insert or update on subscription_items   for each row execute function set_audit_fields();
 ```
 
-`profiles` is attached like every other table now (it was the one exception until the
-roles-and-user-roles migration). The one
+`profiles` is attached like every other table. The one
 wrinkle: a profile's `created_by` means "the admin who invited them," set via
 `handle_new_auth_user()` below, not the row owner's own `auth.uid()` — see that section for
 how the two are reconciled.
