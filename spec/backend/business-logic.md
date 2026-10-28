@@ -47,7 +47,7 @@ The `-1` ensures the item covers exactly `duration_days × quantity` calendar da
 
 **Rule — what counts as a conflict:**
 - **Membership items** (`plan.category = 'membership'`): a new item's `[start_date, end_date]` conflicts with **any** existing non-deleted membership item for that member, regardless of `plan_id` — a member logically has one membership at a time, so a Monthly overlapping an Annual is still a conflict.
-- **Add-on items** (`plan.category = 'addon'`): a new item conflicts only with an existing non-deleted item referencing the **same** `plan_id` for that member — two overlapping "Zumba Class" items conflict; a Zumba Class overlapping a Personal Training add-on does not, since holding several different add-ons concurrently is the normal case (REQ-SUB-003).
+- **Add-on items** (`plan.category = 'addon'`): a new item conflicts only with an existing item referencing the **same** `plan_id` for that member — two overlapping "Zumba Class" items conflict; a Zumba Class overlapping a Personal Training add-on does not, since holding several different add-ons concurrently is the normal case (REQ-SUB-003).
 - "For that member" means as either `member_id` or `shared_member_id` — the same two-role union `member_current_items` already uses.
 - An existing item with `end_date IS NULL` (indefinite) is treated as open-ended for this comparison — always overlapping. In practice this rarely triggers on the *new*-item side, since REQ-SUB-007's hard block already stops an indefinite plan from being re-attached before this check would ever run.
 - Two ranges `[aStart, aEnd]` and `[bStart, bEnd]` overlap when `aStart <= bEnd and bStart <= aEnd` (treating a `NULL` `end_date` as `+infinity`).
@@ -66,7 +66,7 @@ Membership plans and add-ons now live in one unified `plans` catalog table, dist
 
 If `plans.duration_days IS NULL` (e.g. "Membership Fee", `category = 'addon'`):
 - Charged once, has no `end_date` (`null`), never expires.
-- **Cannot be attached again** to a member who already has a non-deleted `SubscriptionItem` referencing it, from any past subscription — a **hard block**, with no "attach anyway" path. REQ-SUB-007. This only needs to check for an existing row, so it applies regardless of the deferred cancellation logic below.
+- **Cannot be attached again** to a member who already has a `SubscriptionItem` referencing it, from any past subscription — a **hard block**, with no "attach anyway" path. REQ-SUB-007. This only needs to check for an existing row, so it applies regardless of the deferred cancellation logic below.
 - Refund eligibility for these is undefined in this revision — see §Subscription Cancellation & Refund below.
 
 ### Time-boxed items
@@ -109,29 +109,29 @@ A plan's `max_members` (default `1`) bounds how many members one membership item
 
 ---
 
-## Plan Deletion Guard — soft-delete, guard kept as a product rule
+## Plan Deletion Guard — a real delete behind a usage guard
 
-The `delete-plan` Edge Function now covers both `category = 'membership'` and `category = 'addon'` rows — one function, one guard, for the unified catalog (see edge-functions.md):
-1. Queries: `select count(*) from subscription_items where plan_id = $1 and deleted_at is null`
-2. If count > 0 → block, return an error the client shows as: "This plan cannot be deleted because it is used by X subscription(s)."
-3. If count = 0 → soft-delete: `update plans set deleted_at = now(), deleted_by = auth.uid() where id = $1` — **not** a hard `DELETE`.
+The `delete-plan` Edge Function covers both `category = 'membership'` and `category = 'addon'` rows — one function, one guard, for the unified catalog (see edge-functions.md). Inside the `delete_plan` function, in one transaction with the plan row locked:
+1. Count `subscription_items` where `plan_id = $1`.
+2. If count > 0 → block, return an error the client shows as: "Cannot delete — used by X subscription(s)."
+3. If count = 0 → `delete from plans where id = $1`. The row is gone; the audit log keeps its last values and who deleted it.
 
 Editing a plan is still allowed via a direct RLS-guarded `supabase-js` update (admin only). Changing `price` or `duration_days` does **not** recalculate existing `subscription_items` rows.
 
-**Defense-in-depth:** a hard `DELETE` on `plans` — or any table — is made structurally impossible by the `prevent_hard_delete()` trigger (database.md), regardless of code path, including a service-role Edge Function.
-
-**Open item (not yet resolved):** soft-delete no longer risks breaking a `SubscriptionItem`'s `plan_id` FK the way a hard delete would, since the plan row still exists either way — a soft-deleted plan's name still resolves fine in historical items. The guard above is being kept purely as a *product* safeguard for now (don't let a catalog item disappear while people still hold it), not because it's still technically required. Worth confirming with product whether that's still wanted. Same open item applies to `delete-branch` (see edge-functions.md §5).
+**Defense-in-depth:** `subscription_items.plan_id` is a foreign key with `ON DELETE RESTRICT`, so even a code path that skipped the guard could not delete a plan that items still point at. That is why a plan in use can never be deleted and a historical item always finds its plan.
 
 ---
 
-## No Hard Delete, Ever
+## Deletes Are Real, Guarded and Audited
 
-Every business table (`profiles`, `branches`, `plans`, `members`, `subscriptions`, `subscription_items`) supports **soft delete only** — a `deleted_at`/`deleted_by` update, never a `DELETE` statement.
+Members, subscriptions (a checkout and its items), plans, branches and roles are deleted for real, never by a flag. **Users are never deleted, only deactivated** (`is_active = false`).
 
-- Enforced structurally by a `prevent_hard_delete()` `BEFORE DELETE` trigger on every table (database.md), not just by omitting `delete` RLS policies — this protects against a hard delete from *any* privilege level, including the Supabase service role used inside Edge Functions.
-- **Every read excludes soft-deleted rows by default.** Every RLS `select` policy filters `deleted_at is null`, and every hand-written validation query (uniqueness checks, indefinite-item repeat checks, deletion-usage guards, report queries) must add the same filter explicitly — there is no view or default that does this automatically beyond `member_current_items` (database.md §Views). See [edge-functions.md §9](./edge-functions.md#9-validation-summary-table) for the full list of places this matters.
-- `AuditLog` is the one exception: it has no `deleted_at` column and no delete path at all, soft or hard — an editable/deletable audit trail defeats its own purpose (REQ-ADMIN-005).
-- Cancellation is currently undefined (§Subscription Cancellation & Refund above is deferred). When it returns, note it will be a **different concept** from soft-delete: a cancelled item should remain a live, visible row, not a soft-deleted one.
+- **Each delete is a `delete_*` function behind a `delete-*` Edge Function.** The function locks the row, runs the usage guard, deletes, and writes the audit rows, all in one transaction. There is no `DELETE` grant or policy for clients, so a direct delete from the browser is refused (database.md).
+- **Foreign keys have no cascade.** A row that something still references cannot be deleted even by a code path that skipped the guard. The one cascade is a branch's member-number counter row, which goes with the branch.
+- **The audit trail records the delete.** The audit trigger now also fires on `DELETE` and writes one `audit_log` row per column with the record's last values and `operation = 'delete'`, so who removed what, and what it held, is still on record. `audit_log` itself has no delete path at all (REQ-ADMIN-005): `prevent_hard_delete()` guards it, and `profiles`.
+- **There is no "deleted" state to filter.** No table has a `deleted_at` column, so no read query, view or RLS policy needs a filter for one. A uniqueness rule (a member's phone, a plan's name, a branch's code) holds across all rows.
+- **A deleted number can be reissued only by hand.** `member_number` comes from a per-branch counter that never goes backwards, so automatic numbering never reuses one. But `update-member-number-sequence` checks the members that exist, so an admin who sets the counter back can be given a number a deleted member once held.
+- Cancellation is currently undefined (§Subscription Cancellation & Refund above is deferred). When it returns it will be a **different concept** from delete: a cancelled item should remain a live, visible row.
 
 ---
 
@@ -147,17 +147,23 @@ Format `<branch.code>-<year>-<sequence>` (e.g. `MUM-2026-0001`), generated serve
 
 ## Member Phone Uniqueness (REQ-MEM-001/006)
 
-A member's `phone` must be unique among non-deleted members — enforced by a partial unique index (`idx_members_phone_active`, database.md), the same "unique among live rows" shape as `member_number`, `plans.name` (covers both categories in one table now), and `branches.code`. A create or edit that submits a phone number already in use by another non-deleted member is rejected by Postgres with a unique-violation, surfaced to staff as a validation error naming the conflict. Deleting a member (see §Member Deletion below) frees its phone number for reuse by a new member, since the index only considers `deleted_at is null` rows.
+A member's `phone` must be unique — enforced by a unique index (`idx_members_phone`, database.md), the same shape as `member_number`, `plans.name` (covers both categories in one table) and `branches.code`. A create or edit that submits a phone number already in use by another member is rejected by Postgres with a unique-violation, surfaced to staff as a validation error naming the conflict. Deleting a member (see §Member Deletion below) frees its phone number for reuse by a new member, since the row is gone.
 
 ---
 
 ## Member Deletion (REQ-MEM-007)
 
-Staff/admin can delete a member — a plain soft delete (`deleted_at`/`deleted_by`), same mechanism as every other table, no separate "deactivate" state for members (unlike `profiles`, which has both `is_active` and `deleted_at` — see §User Invitation & Deactivation below).
+Staff/admin can delete a member for real — no separate "deactivate" state for members (unlike `profiles`, which has `is_active`). A member's photo files are removed from storage with the row.
 
-- No usage guard: unlike plans/branches (§Plan Deletion Guard above), deleting a member never checks or blocks on its `Subscription`/`SubscriptionItem` history — those rows are retained unchanged, independent of the member's `deleted_at` state, and still show up in reports/audit history as before.
-- Frees the member's `phone` for reuse by a new member (§Member Phone Uniqueness above); `member_number` is never reused (the per-branch/year sequence only ever increments).
-- A deleted member is excluded from the member list, search, and reports by default, same as any other soft-deleted row (§No Hard Delete, Ever above).
+- **Usage guard:** like plans and branches (§Plan Deletion Guard above), deleting a member is refused while any `SubscriptionItem` still refers to them, as `member_id` or as `shared_member_id` (409 "Cannot delete — used by X subscription/add-on record(s)"). To delete a member, delete their subscriptions first (§Subscription Deletion below).
+- Frees the member's `phone` for reuse by a new member (§Member Phone Uniqueness above); the per-branch `member_number` counter only ever increments, so a number is not reissued automatically.
+- A deleted member is gone from the member list, search and reports. The audit log keeps their last field values.
+
+---
+
+## Subscription Deletion
+
+Staff/admin can delete a whole checkout — its items first, then its header — through the `delete-subscription` function (`delete_subscription` RPC, one transaction, row locked). It is how a mistaken checkout is undone, since items are immutable (a change is a new checkout, never an edit), and it is what frees a member to be deleted. There is no usage guard: nothing refers to a subscription. It is no longer counted in reports, and the audit log records the header and each item as deleted, by whom.
 
 ---
 
@@ -182,11 +188,11 @@ Members are considered "expiring soon" if `end_date` is within **7 days** of tod
 
 ## User Invitation & Deactivation
 
-- Only an `admin` (`is_active_admin()`) may invite a new user or change another user's `role` / `is_active` / `deleted_at`.
+- Only an `admin` (`is_active_admin()`) may invite a new user or change another user's `role` / `is_active`.
 - Inviting a user is **always** done via the `invite-user` Edge Function, which uses the Supabase service role to call the Admin API. This cannot be done with a plain client insert — there is no client-side path to create an `auth.users` row, regardless of which sign-in method the invited user eventually uses.
 - A deactivated user (`is_active = false`) loses access immediately on their next request, not just at their next login — see RLS policies in [database.md](./database.md). Their existing browser session becomes read/write-blocked on every table.
-- An admin cannot deactivate, demote, or soft-delete their own account, and cannot change their own `role` (prevents a gym from being left with zero active admins by accident). Enforced both in the `update-user` Edge Function and as a UI-level disabled state on the currently logged-in admin's own row.
-- **User deletion (REQ-ADMIN-006) is distinct from deactivation:** `is_active = false` is a reversible toggle — the account still appears in `User Management`'s list, just flagged inactive (REQ-ADMIN-004). Soft-deleting a user (`deleted_at`) fully hides it from that list instead. Neither requires the other first — an admin can delete an already-active user, or deactivate without deleting. Same self-protection rule applies to both.
+- An admin cannot deactivate or demote their own account, and cannot change their own `role` (prevents a gym from being left with zero active admins by accident). Enforced both in the `update-user` Edge Function and as a UI-level disabled state on the currently logged-in admin's own row.
+- **Users are never deleted (REQ-ADMIN-006 is retired).** `is_active = false` is a reversible toggle — the account stays in `User Management`'s list, flagged inactive (REQ-ADMIN-004), keeps its roles, and still shows by name on everything it did (`created_by`, `handled_by_staff`, the audit log). Same self-protection rule applies: an admin cannot deactivate themselves.
 - **Google OAuth sign-in is invite-only, same as password sign-in** — a Google account with no matching `profiles` row is signed out immediately after the OAuth handshake, never gets a `profiles` row auto-created, and sees "This email hasn't been invited — contact your admin." See [edge-functions.md §1](./edge-functions.md#1-authentication-req-auth-001004) for the full flow. This closes the gap [architecture.md](../architecture.md) left open by listing Google OAuth as "optional later" without saying how it interacts with the invite-only model.
 - **Password reset (REQ-AUTH-005):** any user with a password-based sign-in can request a reset via Supabase Auth's built-in recovery-email flow (`resetPasswordForEmail` / `updateUser`) — no Edge Function, no custom token infrastructure. Same non-leaking error/response pattern as invite-only checks: the response never confirms whether an email is registered. A user who has so far only signed in via Google can use this same flow to set a password for the first time, since it operates on the existing `auth.users` row.
 

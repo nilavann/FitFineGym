@@ -2,7 +2,7 @@
 
 > Consolidates the frontend side of [requirements-template.md §2 Member Management](../requirements-template.md#2-feature-area-member-management) (REQ-MEM-001–007) and [§3 Member List](../requirements-template.md#3-feature-area-member-list--home-page) (REQ-LIST-001–004) into one place.
 >
-> **This is the current source of truth for Member fields and screens — [screens.md](./screens.md)'s WSCR-02/03/04/06 sections and [data-models.md](./data-models.md)'s `Member` type predate the requirements revision that added `date_of_birth`, `branch_id`, `member_number`, doctor's-care/emergency-contact fields, `handled_by_staff`, and soft-delete columns.** Those files still describe an earlier, smaller Member shape (e.g. weight/height as optional, no member number). Treat this doc as authoritative for Member Management until they're updated to match; the route map, layout breakpoints, and general screen conventions those files describe elsewhere are still valid and referenced below, not repeated.
+> **This is the current source of truth for Member fields and screens — [screens.md](./screens.md)'s WSCR-02/03/04/06 sections and [data-models.md](./data-models.md)'s `Member` type predate the requirements revision that added `date_of_birth`, `branch_id`, `member_number`, doctor's-care/emergency-contact fields, and `handled_by_staff`.** Those files still describe an earlier, smaller Member shape (e.g. weight/height as optional, no member number). Treat this doc as authoritative for Member Management until they're updated to match; the route map, layout breakpoints, and general screen conventions those files describe elsewhere are still valid and referenced below, not repeated.
 >
 > Backend counterpart: [../backend/member-management.md](../backend/member-management.md) — includes `member_list_view`, the resolution to the previously-open "member status" question this doc's search/filter/sort section depends on.
 
@@ -18,7 +18,7 @@
 | REQ-MEM-004 | Client-side photo compression; original + thumbnail both stored |
 | REQ-MEM-005 | System-generated `member_number`, read-only everywhere in the UI |
 | REQ-MEM-006 | Edit any field except `member_number`/`created_by` |
-| REQ-MEM-007 | Delete = soft delete; excluded from list/search/reports by default |
+| REQ-MEM-007 | Delete = a real delete behind a usage guard; gone from list/search/reports |
 | REQ-LIST-001 | Default sort `date_of_joining desc`; sort by name or expiry |
 | REQ-LIST-002 | Search by name/member_number/phone |
 | REQ-LIST-003 | Status pills: All/Active/Expiring/Expired |
@@ -31,7 +31,7 @@
 | Field | Required | Type / Rule |
 |---|---|---|
 | name | Yes | 2–80 chars |
-| phone | Yes | Exactly 10 digits; unique among non-deleted members |
+| phone | Yes | Exactly 10 digits; unique among members |
 | date_of_birth | Yes | Date picker |
 | date_of_joining | Yes | Date picker, pre-filled with today (browser local date), editable |
 | branch_id | Yes | Select from active branches — feeds `member_number` generation |
@@ -97,7 +97,7 @@ All fields from §2 are viewable, with an inline edit toggle (matches the existi
 
 - **Member number** shown read-only near the hero section (`member_number`, e.g. `MUM-2026-0001`).
 - **`handled_by_staff`** editable independently of the rest of the personal-details section — its own field, its own save action is not required (can share the personal-details save), but must never overwrite `created_by`. Already set at registration (§3.1, defaulting to whoever created the record); this is just the same field, reachable again here to reassign it later.
-- **Delete action** (REQ-MEM-007): a destructive action (confirm dialog) that calls a soft-delete update and navigates back to `/` on success. No separate "deactivate" state exists for members.
+- **Delete action** (REQ-MEM-007): a destructive action (confirm dialog) that calls the `delete-member` Edge Function and navigates back to `/` on success. A member with subscriptions is refused until those are deleted (§3.2 / Subscription History). No separate "deactivate" state exists for members.
 - **Photo**: upload or camera-capture control (§4); shows `photo_url` here (the original), not the thumbnail — thumbnails are for list/card surfaces only (REQ-MEM-004).
 
 Member field saves and subscription saves remain **completely independent** (own loading/error state each) — unchanged from the existing screens.md rule. **See [member-detail.md](./member-detail.md) for the full screen spec** — component state, the loading/error/retry treatment (rules.md rules 29–30), empty states for Current Membership/Add-ons/History (rule 31), and the mobile-first responsive breakdown (rule 16). This section stays a summary; that doc is authoritative for this route.
@@ -110,7 +110,7 @@ Same field set as Add Member (§3.1) — `handled_by_staff` included, same as it
 
 ### 3.4 Members List — `/`
 
-**Data source:** `member_list_view` ([backend/member-management.md §5](../backend/member-management.md#5-member_list_view--resolving-the-member-status-open-question)) — one row per non-deleted member with `current_membership_plan_id`/`current_membership_plan_name`/`current_membership_end_date`/`current_addon_plan_ids` already joined in. The frontend never re-derives this from raw `subscription_items` itself.
+**Data source:** `member_list_view` ([backend/member-management.md §5](../backend/member-management.md#5-member_list_view--resolving-the-member-status-open-question)) — one row per member with `current_membership_plan_id`/`current_membership_plan_name`/`current_membership_end_date`/`current_addon_plan_ids` already joined in. The frontend never re-derives this from raw `subscription_items` itself.
 
 #### Layout
 

@@ -19,7 +19,7 @@ the write needs one of these:
 
 | Need | Example |
 |---|---|
-| A secret or privileged API (service role, `auth.admin`, Storage with the service role) | `invite-user`, `list-users`, `purge-member` |
+| A secret or privileged API (service role, `auth.admin`, Storage with the service role) | `invite-user`, `list-users`, `delete-member` (row + photo files) |
 | A value the client can't be trusted to compute | `create-subscription` (`end_date`) |
 | Several writes that must succeed or fail together, or one request that spans database and Storage | `create-subscription`, `create-member` (row + photo) |
 | A rule RLS can't express | `update-user` ("not your own roles") |
@@ -86,7 +86,7 @@ caller's access (`access_of`) and enforces its own rules, as in
 
 - **Request DTO**: the schema in `dto.ts`, built from `_shared/validate.ts` rules. The type is
   `Parsed<typeof schema>`, so the validation and the type cannot drift apart.
-- Unknown fields are rejected (400), so a body cannot carry `deleted_at`, `created_by`, `member_number`.
+- Unknown fields are rejected (400), so a body cannot carry `created_by`, `member_number` or any audit column.
 - Text is normalised, not escaped. Values reach the database only as typed RPC parameters or `.eq` / `.in`.
 - **Response DTO**: an interface in `dto.ts`, built by a mapper. Never return a database row or a
   `to_jsonb` result: a column added later, or an audit column, would reach the client unannounced.

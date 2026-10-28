@@ -39,9 +39,7 @@ create table if not exists subscriptions (
   created_at    timestamptz not null default now(),
   created_by    uuid references profiles(id),
   changed_at    timestamptz,
-  changed_by    uuid references profiles(id),
-  deleted_at    timestamptz,
-  deleted_by    uuid references profiles(id)
+  changed_by    uuid references profiles(id)
 );
 create index if not exists idx_subscriptions_member_id on subscriptions(member_id);
 
@@ -60,8 +58,6 @@ create table if not exists subscription_items (
   created_by          uuid references profiles(id),
   changed_at          timestamptz,
   changed_by          uuid references profiles(id),
-  deleted_at          timestamptz,
-  deleted_by          uuid references profiles(id),
   constraint chk_subscription_item_shared_member_distinct check (
     shared_member_id is null or shared_member_id <> member_id
   )
@@ -69,9 +65,9 @@ create table if not exists subscription_items (
 create index if not exists idx_subscription_items_subscription_id on subscription_items(subscription_id);
 create index if not exists idx_subscription_items_plan_id on subscription_items(plan_id);
 create index if not exists idx_subscription_items_member_end
-  on subscription_items(member_id, end_date) where deleted_at is null;
+  on subscription_items(member_id, end_date);
 create index if not exists idx_subscription_items_shared_member_end
-  on subscription_items(shared_member_id, end_date) where deleted_at is null and shared_member_id is not null;
+  on subscription_items(shared_member_id, end_date) where shared_member_id is not null;
 ```
 
 No `plan_id`/dates/quantity/amount on `subscriptions` — those live per line on `subscription_items`. No `status`/`refund_amount`/`cancellation_reason`/`cancelled_by`/`cancelled_at`/`overlap_*` columns on either table — deferred/resolved-elsewhere, per the header note above.
@@ -97,10 +93,10 @@ The **only** write path for `subscriptions`/`subscription_items` — RLS (§6 be
 
 Responsibilities, in order (see [edge-functions.md §3](./edge-functions.md#3-subscriptions) for the full write-up):
 
-1. Verify caller is an authenticated, active, non-deleted user (`is_active_user()`, from JWT).
+1. Verify caller is an authenticated, active user (`is_active_user()`, from JWT).
 2. Validate the payload has at least one item, and **exactly one** item references a `category = 'membership'` plan — reject otherwise (REQ-SUB-001).
 3. For each item:
-   a. Look up the plan (`duration_days`, `price`, `category`, `max_members`) — must not be soft-deleted.
+   a. Look up the plan (`duration_days`, `price`, `category`, `max_members`) — must exist.
    b. Validate `quantity` (REQ-SUB-009): positive integer when the plan has a duration; reject a quantity on an indefinite item.
    c. Compute `end_date` (§3 above).
    d. Compute default `amount_paid = plan.price × quantity` if the client didn't override it; persist whatever the client submits either way.
@@ -128,9 +124,9 @@ alter table subscription_items enable row level security;
 -- header with no items, or an item with no valid parent, by a direct insert. No
 -- insert/update policy is defined for either table on purpose.
 create policy "subscriptions_select_active_users" on subscriptions
-  for select using (is_active_user() and deleted_at is null);
+  for select using (is_active_user());
 create policy "subscription_items_select_active_users" on subscription_items
-  for select using (is_active_user() and deleted_at is null);
+  for select using (is_active_user());
 ```
 
 No admin/staff distinction on read — any active user can view every subscription/item (Section 1's role model). Writes are gated entirely by which Edge Function exists (`create-subscription`/`update-subscription`), not by RLS column/role checks, since RLS alone can't express "header and items must land together or not at all."
@@ -141,11 +137,11 @@ No admin/staff distinction on read — any active user can view every subscripti
 
 - **Exactly one membership item per checkout** (REQ-SUB-001): enforced in `create-subscription` step 2, not a DB constraint — `subscription_items` has no way to distinguish "the" membership item at the schema level, so this is an application-layer rule.
 - **Catalog item duration** (REQ-SUB-006): `plans.duration_days IS NULL` → indefinite (charged once, never expires); a positive integer → time-boxed, can be attached again later. See [business-logic.md §Catalog Item Rules](./business-logic.md#catalog-item-rules).
-- **Indefinite items — hard block, no override** (REQ-SUB-007): cannot be attached again to a member who already has a non-deleted `subscription_items` row referencing it, from any past subscription. This only needs to check for an existing row, not a status, so it stands independently of the deferred cancellation logic.
+- **Indefinite items — hard block, no override** (REQ-SUB-007): cannot be attached again to a member who already has a `subscription_items` row referencing it, from any past subscription. This only needs to check for an existing row, not a status, so it stands independently of the deferred cancellation logic.
 - **Quantity & multiplier** (REQ-SUB-009): straight multiplication of duration and price, no bulk discount, uniformly for membership and add-on items. No edit path for `quantity` after creation exists in this revision (REQ-SUB-010 deferred).
 - **Shared members / couple plans** (REQ-SUB-004): a `max_members = 2` membership item can optionally set `shared_member_id` at creation only — no path to add, change, or clear it afterward. Add-on items never set `shared_member_id`, even on a couple's subscription. See [business-logic.md §Shared Members / Couple Plans](./business-logic.md#shared-members--couple-plans).
 - **Payment mode is checkout-level, not item-level** (REQ-SUB-002): one `payment_mode` per `subscriptions` row, covering every item created in it — a narrower capability than a previous design where an add-on could carry its own independent payment mode.
-- **Plan deletion guard**: a plan referenced by any non-deleted `subscription_items` row cannot be deleted — see [business-logic.md §Plan Deletion Guard](./business-logic.md#plan-deletion-guard-soft-delete-guard-kept-as-a-product-rule) and [edge-functions.md §4](./edge-functions.md#4-admin-catalog-management-plans-branches). Editing a plan's `price`/`duration_days` never recalculates existing `subscription_items` rows.
+- **Plan deletion guard**: a plan referenced by any `subscription_items` row cannot be deleted — see [business-logic.md §Plan Deletion Guard](./business-logic.md#plan-deletion-guard--a-real-delete-behind-a-usage-guard) and [edge-functions.md §4](./edge-functions.md#4-admin-catalog-management-plans-branches). Editing a plan's `price`/`duration_days` never recalculates existing `subscription_items` rows.
 - **Overlap warning is out of scope here** (REQ-SUB-005/008): see the header note and §4 above — this is entirely a frontend concern, with zero backend footprint (no column, no check, no Edge Function logic).
 - **No cancellation/refund path exists** (REQ-SUB-011, deferred): `subscription_items` carries no `status`/`refund_amount`/`cancellation_reason`/`cancelled_by`/`cancelled_at` columns.
 

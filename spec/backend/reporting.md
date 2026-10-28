@@ -23,25 +23,25 @@ All four source tables already exist — see [database.md](./database.md) for fu
 | Table / View | Columns used here |
 |---|---|
 | `member_list_view` | `id`, `current_membership_plan_id`, `current_membership_end_date` — feeds the summary tiles and Expiring This Week list, via the same client-side `deriveStatus()` the Members List already uses (no server-side status column, per [member-management.md §5](./member-management.md#5-member_list_view--resolving-the-member-status-open-question)) |
-| `subscription_items` | `id`, `subscription_id`, `plan_id`, `member_id`, `start_date`, `amount_paid`, `deleted_at` — one row per line item; `start_date` is the field both the charts and the transaction list bucket/filter on (REQ-REPORT-001's acceptance criteria: counted by `start_date`, not `created_at`) |
+| `subscription_items` | `id`, `subscription_id`, `plan_id`, `member_id`, `start_date`, `amount_paid` — one row per line item; `start_date` is the field both the charts and the transaction list bucket/filter on (REQ-REPORT-001's acceptance criteria: counted by `start_date`, not `created_at`) |
 | `subscriptions` | `id`, `payment_mode` — joined in for the transaction list; payment mode is checkout-level (§Subscription Management), not per-item. Also the sole source for [frontend/reporting.md §5](../frontend/reporting.md#5-revenue-by-payment-mode-new--donut-chart)'s Revenue by Payment Mode donut — a client-side `sum(amount_paid)` grouped by this column over the same rows, no separate query |
 | `plans` | `id`, `name`, `category` — joined in to label each row "Subscription" (`category = 'membership'`) vs. "Add-on" (`category = 'addon'`), and to drive which of the two charts a row's month-count falls into |
 | `members` | `id`, `name`, `phone`, `member_number` — joined in for the transaction list's member columns |
 
-No row here can reference a soft-deleted plan: the plan-deletion usage guard ([business-logic.md §Plan Deletion Guard](./business-logic.md#plan-deletion-guard-soft-delete-guard-kept-as-a-product-rule)) already blocks deleting any plan with non-deleted `subscription_items` referencing it, so every `plan_id` a report query encounters resolves to an active plan. Every query still adds `deleted_at is null` on `subscription_items`/`subscriptions`/`members` explicitly (rules.md rule 21) rather than relying on that guarantee alone.
+No row here can reference a missing plan: the plan-deletion usage guard ([business-logic.md §Plan Deletion Guard](./business-logic.md#plan-deletion-guard--a-real-delete-behind-a-usage-guard)) already blocks deleting any plan that `subscription_items` reference (and the foreign key backs it), so every `plan_id` a report query encounters resolves to a plan. A deleted checkout or member simply isn't there, so no query filters on a deleted flag.
 
 ---
 
 ## 3. Read Path — Plain `supabase-js`, No Edge Function
 
-Per [edge-functions.md §6](./edge-functions.md#6-reporting-req-report-001002): RLS already grants `select` on all four tables/views to any active, non-deleted user (`is_active_user()`), so this is implementable entirely as direct client reads — no Edge Function, no server-side month-bucketing logic. The queries needed:
+Per [edge-functions.md §6](./edge-functions.md#6-reporting-req-report-001002): RLS already grants `select` on all four tables/views to any active user (`is_active_user()`), so this is implementable entirely as direct client reads — no Edge Function, no server-side month-bucketing logic. The queries needed:
 
 1. **Summary tiles + Expiring This Week:** one query against `member_list_view` (already used by the Members List page) — `deriveStatus()` runs client-side over the result exactly as it does there, so the counts are always consistent with what the Members List shows for the same data.
 2. **Transaction list + charts, for a given `[start_date, end_date]` range:**
-   a. `subscription_items` filtered `start_date >= range.start and start_date <= range.end and deleted_at is null`.
-   b. The distinct `subscription_id`s from (a) → `subscriptions` filtered `.in('id', ids) and deleted_at is null`, for `payment_mode`.
+   a. `subscription_items` filtered `start_date >= range.start and start_date <= range.end`.
+   b. The distinct `subscription_id`s from (a) → `subscriptions` filtered `.in('id', ids)`, for `payment_mode`.
    c. The distinct `plan_id`s from (a) → `plans` filtered `.in('id', ids)`, for `name`/`category`.
-   d. The distinct `member_id`s from (a) → `members` filtered `.in('id', ids) and deleted_at is null`, for `name`/`phone`/`member_number`.
+   d. The distinct `member_id`s from (a) → `members` filtered `.in('id', ids)`, for `name`/`phone`/`member_number`.
    e. Join (a)–(d) client-side into one row per item — same "fetch flat, join in TypeScript" pattern already used by `subscriptionRepository` (`getHistoryForMember`/`getItemsForSubscriptions`), not a Postgres-side join, consistent with how every other read in this codebase avoids supabase-js's nested-select type-inference bug (see `member.repository.ts`'s comment on this).
 3. **Chart buckets** are then derived from the same joined row set in (2): group by `(plan.category, calendar month of start_date)`, count. No separate query — the transaction list and the charts read the exact same result set, just aggregated two different ways, guaranteeing they can never disagree.
 

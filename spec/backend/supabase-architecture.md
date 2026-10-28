@@ -35,9 +35,9 @@ Your gym subscription app needs:
 - a unified, admin-managed catalog of gym plans and add-ons (membership fees, classes, couple plans, etc.)
 - subscription checkouts with multiple items and quantity-based multi-period purchases
 - photo storage
-- business rules like plan soft-delete guards and one-time-item repeat blocking (overlap warnings and cancellation/refund are deferred for now — see the note above)
+- business rules like plan, branch, role and member delete guards and one-time-item repeat blocking (overlap warnings and cancellation/refund are deferred for now — see the note above)
 - a full field-level audit trail
-- soft delete everywhere — nothing is ever permanently removed from the database
+- deletes are real but guarded: a row that something still uses cannot be deleted, every delete is recorded in the audit log, and users are only ever deactivated
 
 Supabase is a strong fit because it handles all of these with less setup than building a full custom backend.
 
@@ -71,7 +71,6 @@ flowchart LR
 
 4. Row Level Security (RLS)
    - Protects data so only allowed users can read or change records
-   - Also hides soft-deleted rows from every normal read
 
 5. Edge Functions
    - Used for important business rules that must not be trusted from the browser
@@ -123,7 +122,7 @@ Full field-by-field definitions live in [domain-model.md](./domain-model.md) and
 #### profiles
 Used for app staff/admin users.
 
-Fields: id (same as auth.users.id), full_name, role (admin/staff), is_active, created_at/changed_at, created_by/changed_by, deleted_at/deleted_by.
+Fields: id (same as auth.users.id), full_name, is_active, created_at/changed_at, created_by/changed_by. Roles live in `roles`/`user_roles`. There is no `deleted_at`: users are deactivated, never deleted.
 
 #### branches
 Gym locations. A member's branch determines their `member_number` prefix.
@@ -189,14 +188,14 @@ or `NULL` when the plan's `duration_days` is `NULL` (indefinite item). One formu
 #### One-time (indefinite) items — hard block, no override
 A `category = 'addon'` item with `duration_days IS NULL` (e.g. "Membership Fee") can never be attached twice to the same member — a hard block with no bypass. Refund eligibility for these is undefined for now (see the deferred note below).
 
-#### Plan / branch soft-delete guard
-A plan (either category) or branch cannot be soft-deleted while any `subscription_items`/`members` row still references it — a "used by X record(s)" pattern, using a soft-delete `UPDATE` instead of a `DELETE`.
+#### Delete guards (members, subscriptions, plans, branches, roles)
+A plan (either category), branch, role or member cannot be deleted while any `subscription_items` / `members` / `user_roles` row still references it — a "used by X record(s)" pattern. The guard and the `DELETE` run in one transaction inside a `delete_*` function, and a foreign key without cascade is the backstop. A checkout (its items and header) can be deleted on its own with `delete-subscription`, which is what frees a member to be deleted.
 
 #### No hard delete, ever
-Every business table supports soft delete only (`deleted_at`/`deleted_by`). A database trigger blocks any real `DELETE` outright, at any privilege level — see database.md §Soft Delete Enforcement.
+Members, subscriptions, plans, branches and roles are deleted for real, never by a flag; clients hold no `DELETE` grant, so every delete goes through a `delete_*` function. Users are never deleted. A database trigger blocks any `DELETE` on `profiles` and `audit_log` outright — see database.md §Delete Protection.
 
 #### Audit fields
-`created_by`/`changed_by`/`deleted_by` are set by the database using the logged-in user, not by the frontend. In addition, a separate field-level trigger writes one `audit_log` row per changed column on every insert/update (see database.md).
+`created_by`/`changed_by` are set by the database using the logged-in user, not by the frontend. In addition, a separate field-level trigger writes one `audit_log` row per changed column on every insert, update and delete (a delete records the row's last values; see database.md).
 
 #### Deferred: overlap warnings, cancellation & refund
 Not implemented in this revision — no `overlap_override`, `status`, or `refund_amount` columns exist on `subscription_items` yet. See [domain-model.md §Open items](./domain-model.md#open-items-not-blocking-but-worth-resolving-before-implementation-begins).
@@ -222,7 +221,7 @@ There is no client-side way to create a `profiles` row other than the admin-only
 
 ### Access control pattern
 - frontend route guards for better UX
-- RLS policies for real security, including hiding soft-deleted rows
+- RLS policies for real security
 
 This means a staff user cannot bypass restrictions just by changing the UI.
 
@@ -233,16 +232,15 @@ This means a staff user cannot bypass restrictions just by changing the UI.
 RLS is one of the most important parts of this architecture.
 
 It makes sure:
-- active, non-deleted users can read relevant data
-- soft-deleted rows never show up in a normal read, for anyone
+- active users can read relevant data
 - admins can write the plan catalog and branches, and manage users
 - staff cannot modify admin-only data
 - deactivated users lose access immediately
 
 ### Example policy idea
-- all active users can read members, subscriptions, subscription items, and the plan catalog (excluding soft-deleted rows)
-- only admins can create/update/soft-delete plans (either category) and branches
-- only admins can invite, deactivate, or soft-delete users
+- all active users can read members, subscriptions, subscription items, and the plan catalog
+- only admins can create/update/delete plans (either category) and branches
+- only admins can invite or deactivate users (users are never deleted)
 - only admins can read the audit log; nobody can write to it directly (only the database trigger writes to it)
 
 RLS is the main security boundary in Supabase. See [database.md §Row Level Security](./database.md#row-level-security-rls) for the actual policies.
@@ -258,9 +256,9 @@ Edge Functions are the place for logic that should not be exposed to the client.
 - **update-subscription** — header-only edits (`payment_mode`, `notes`). Line items have no update path at all yet — a new checkout is required to add or change anything.
 
 ### Catalog & users
-- **delete-plan / delete-branch** — usage guard, then soft-delete instead of a real delete. `delete-plan` now covers both membership and add-on rows (one unified catalog, no separate `delete-addon`).
+- **delete-plan / delete-branch / delete-role** — usage guard, then a real delete. `delete-plan` covers both membership and add-on rows (one unified catalog, no separate `delete-addon`). **delete-member** and **delete-subscription** follow the same pattern (a member's photos are removed with the row).
 - **invite-user** — admin-only, calls the Supabase Admin API, `profiles` row created by a trigger.
-- **update-user** — admin-only profile edits (name/role/active/soft-delete), blocked against the caller's own row.
+- **update-user** — admin-only profile edits (name/role/active), blocked against the caller's own row. Users are deactivated, never deleted.
 
 ### Reporting & audit
 - **get-report-data** — monthly membership/add-on item counts (split by `plans.category`) plus the itemized transaction list for a date range; read-only, available to staff too.
@@ -346,12 +344,12 @@ This keeps the app clean and makes it easier to maintain.
 
 ### Phase 3 — Secure business rules
 - implement `create-subscription` (multi-item checkout, quantity multipliers, indefinite-item hard block)
-- implement plan/branch soft-delete guards
+- implement plan/branch/role/member delete guards
 - *(deferred)* overlap-warning flow and cancellation/refund — see domain-model.md §Open items
 
 ### Phase 4 — Access control
 - add admin/staff roles
-- configure RLS policies, including `deleted_at is null` filtering
+- configure RLS policies
 - protect admin-only screens
 - enforce invite-only for both password and Google sign-in
 
@@ -361,7 +359,7 @@ This keeps the app clean and makes it easier to maintain.
 - save both photo URLs on the member record
 
 ### Phase 6 — Data integrity & audit
-- add the `prevent_hard_delete()` trigger to every business table
+- add the `prevent_hard_delete()` trigger to `profiles` and `audit_log`
 - add the field-level audit trigger, grouped by `change_id`
 
 ### Phase 7 — Polish
@@ -376,16 +374,16 @@ This keeps the app clean and makes it easier to maintain.
 
 1. Create profiles, branches, plans, configuration, members, member_number_sequences, subscriptions, subscription_items, audit_log tables
 2. Add indexes
-3. Add `deleted_at`/`deleted_by` columns and the `prevent_hard_delete()` triggers
+3. Add the `prevent_hard_delete()` triggers on `profiles` and `audit_log`
 4. Add `generate_member_number()` and its trigger
 5. Add audit field triggers (`set_audit_fields()`) and the field-level `audit_row_changes()` trigger
 6. Create the `member_current_items` view
 7. Enable RLS
-8. Create policies (including `deleted_at is null` filtering and the new tables)
+8. Create policies (including the new tables)
 9. Seed configuration, branches, plans (both categories)
 10. Create Edge Functions
 11. Connect frontend to Supabase
-12. Test admin/staff permissions, including soft-delete visibility and Google OAuth invite-only behavior
+12. Test admin/staff permissions, including the delete guards and Google OAuth invite-only behavior
 
 See [database.md §Migrations](./database.md#migrations) for the concrete migration file list.
 
@@ -398,7 +396,7 @@ If you are new to Supabase, think of it like this:
 - Database = where your app data lives
 - Auth = who is logged in (password or Google, same invite-only rule either way)
 - Storage = where photos/files live
-- RLS = who is allowed to access what, and what's hidden because it's soft-deleted
+- RLS = who is allowed to access what
 - Edge Functions = secure server-side logic
 - Audit log = an automatic diary of every field that ever changed, on every table
 
@@ -411,8 +409,8 @@ So instead of building a full custom backend from scratch, you let Supabase hand
 For this gym subscription app, the best approach is:
 
 - use Supabase Auth for login (password and Google, invite-only)
-- use Supabase Postgres for the main data model, with soft delete everywhere and no hard deletes
-- use RLS for access control, always filtering out soft-deleted rows
+- use Supabase Postgres for the main data model, with guarded real deletes (usage guard, audit trail) and users only deactivated
+- use RLS for access control
 - use Edge Functions for sensitive business rules (multi-item checkout creation, indefinite-item hard block, catalog guards — overlap warnings and cancellation/refund once that design lands)
 - use Storage for member photos
 - use the field-level audit trigger for full accountability
