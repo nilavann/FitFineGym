@@ -72,8 +72,20 @@ describe('SettingsPage — account', () => {
     await ready();
     (auth.resetPasswordForEmail as Count).mockRejectedValue(new Error('smtp down'));
     await user.click(screen.getByRole('button', { name: 'Change Password' }));
-    expect(await screen.findByText('Something went wrong sending the reset email. Please try again.')).toBeInTheDocument();
-    expect(screen.queryByText(/smtp/)).not.toBeInTheDocument();
+    expect(await screen.findByText(/Couldn't send the reset email\. Please try again/)).toBeInTheDocument();
+    expect(screen.queryByText(/smtp/)).not.toBeInTheDocument(); // the raw error text is never shown
+  });
+
+  it('Change Password names the real cause when it is known (rate limit, offline)', async () => {
+    const { user, auth } = renderSettings();
+    await ready();
+    (auth.resetPasswordForEmail as Count).mockRejectedValueOnce(Object.assign(new Error('x'), { status: 429, code: 'over_email_send_rate_limit' }));
+    await user.click(screen.getByRole('button', { name: 'Change Password' }));
+    expect(await screen.findByText('Too many reset requests. Please wait a few minutes before trying again.')).toBeInTheDocument();
+
+    (auth.resetPasswordForEmail as Count).mockRejectedValueOnce(new Error('Failed to fetch'));
+    await user.click(screen.getByRole('button', { name: 'Change Password' }));
+    expect(await screen.findByText("Couldn't send the email — check your connection and try again.")).toBeInTheDocument();
   });
 
   it('disables Change Password while the email is being sent', async () => {

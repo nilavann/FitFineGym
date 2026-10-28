@@ -4,6 +4,7 @@ import { KeyRound, LogOut, Users, Layers, Building2, UserCog, ShieldCheck, Repea
 import { useAuth } from '../context/auth.context';
 import { useServices } from '../context/services.context';
 import { withTimeout } from '../lib/with-timeout';
+import { describeResetEmailFailure, RESET_EMAIL_TIMEOUT } from '../lib/reset-email-error';
 import { AdminTabs } from '../components/AdminTabs';
 import { LegalLinks } from '../components/LegalLinks';
 import { getInitials } from '../lib/avatar';
@@ -21,6 +22,8 @@ const RADIUS_LABEL: Record<Radius, string> = { soft: 'Soft', sharp: 'Sharp' };
  * Settings hub (screens.md WSCR-11) — the one place admins reach Manage Plans, Manage
  * Branches, and Manage Users from; those routes have no other in-app link to them.
  */
+const RESET_EMAIL_TIMEOUT_MS = 15000;
+
 export function SettingsPage() {
   const { currentProfile, session, signOut, resetPasswordForEmail } = useAuth();
   const { tint, radius, setTint, setRadius } = useTheme();
@@ -36,14 +39,17 @@ export function SettingsPage() {
   } = useServices();
 
   const [passwordResetState, setPasswordResetState] = useState<PasswordResetState>('idle');
+  const [passwordResetError, setPasswordResetError] = useState<string | null>(null);
 
   async function handleChangePassword() {
     if (!session?.user.email) return;
     setPasswordResetState('sending');
+    setPasswordResetError(null);
     try {
-      await resetPasswordForEmail(session.user.email);
+      await withTimeout(resetPasswordForEmail(session.user.email), RESET_EMAIL_TIMEOUT_MS, new Error(RESET_EMAIL_TIMEOUT));
       setPasswordResetState('sent');
-    } catch {
+    } catch (err) {
+      setPasswordResetError(describeResetEmailFailure(err));
       setPasswordResetState('error');
     }
   }
@@ -91,7 +97,7 @@ export function SettingsPage() {
         )}
         {passwordResetState === 'error' && (
           <p className="settings-account-message settings-account-message-error">
-            Something went wrong sending the reset email. Please try again.
+            {passwordResetError}
           </p>
         )}
       </section>

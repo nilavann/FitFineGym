@@ -37,23 +37,7 @@
   margin: 0.75rem 0 0;
 }
 
-.users-checkbox-label {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin-top: 0.6rem;
-  color: var(--color-text-secondary);
-  font-size: 0.82rem;
-  font-weight: 500;
-  cursor: pointer;
-  width: fit-content;
-}
 
-.users-checkbox-label input[type='checkbox'] {
-  width: 18px;
-  height: 18px;
-  accent-color: var(--tint-accent);
-}
 
 .users-skeleton {
   height: 300px;
@@ -306,41 +290,15 @@
 }
 
 .users-edit-button,
-.users-delete-button {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
-  min-height: 44px;
-  min-width: 44px;
-  background: var(--color-neutral-0);
-  border: 1px solid var(--color-border-default);
-  border-radius: var(--radius-el);
-  padding: 0.3rem 0.75rem;
-  cursor: pointer;
-  font-size: 0.78rem;
-  transition: background-color 0.15s ease, border-color 0.15s ease;
-}
 
 .users-edit-button:hover:not(:disabled) {
   background: var(--color-surface-page);
   border-color: var(--color-neutral-300);
 }
 
-.users-delete-button {
-  color: var(--color-status-danger-text);
-}
 
-.users-delete-button:hover:not(:disabled) {
-  background: var(--color-status-danger-bg-subtle);
-  border-color: var(--color-status-danger-border);
-}
 
 .users-edit-button:disabled,
-.users-delete-button:disabled {
-  color: var(--color-text-disabled);
-  cursor: not-allowed;
-  opacity: 0.6;
-}
 
 .users-card-actions,
 .users-table-actions {
@@ -391,10 +349,6 @@
   color: var(--color-status-danger-text);
 }
 
-.users-status-deleted {
-  background: var(--color-status-neutral-bg);
-  color: var(--color-status-neutral-text);
-}
 
 .users-you-tag {
   color: var(--color-text-muted);
@@ -444,31 +398,8 @@
   color: var(--color-text-secondary);
 }
 
-.users-delete-confirm {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  min-height: 44px;
-  border-radius: var(--radius-el);
-  padding: 0.6rem 1.5rem;
-  font-size: 0.85rem;
-  font-weight: 600;
-  cursor: pointer;
-  background: var(--color-status-danger-text);
-  color: var(--color-text-inverse);
-  border: none;
-  transition: opacity 0.15s ease;
-}
 
-.users-delete-confirm:hover:not(:disabled) {
-  opacity: 0.9;
-}
 
-.users-delete-confirm:disabled {
-  background: var(--color-interactive-disabled-bg);
-  color: var(--color-interactive-disabled-text);
-  cursor: not-allowed;
-}
 
 /* Mobile cards - default (< 768px) */
 

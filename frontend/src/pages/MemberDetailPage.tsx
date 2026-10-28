@@ -13,7 +13,6 @@ import {
   Plus,
 } from 'lucide-react';
 import { useServices } from '../context/services.context';
-import { useAuth } from '../context/auth.context';
 import { BackLink } from '../components/BackLink';
 import { CameraCaptureModal } from '../components/CameraCaptureModal';
 import { PhotoLightbox } from '../components/PhotoLightbox';
@@ -35,7 +34,6 @@ import { isNetworkError } from '../lib/network-error';
 import { checkViolation, isUniqueViolation } from '../lib/db-error';
 import { isNotFound, refusalMessage } from '../lib/edge-function-error';
 import { cleanText, TEXT_LIMITS } from '../lib/text-rules';
-import { isSystemAdmin } from '../lib/roles';
 
 const FETCH_TIMEOUT_MS = 10000;
 const GENDERS: Gender[] = ['Male', 'Female', 'Other'];
@@ -56,9 +54,6 @@ function Req() {
   );
 }
 
-/** What a system admin types to unlock the permanent-delete button. */
-const PURGE_CONFIRM_WORD = 'DELETE';
-
 export function MemberDetailPage() {
   const { id } = useParams();
   const memberId = Number(id);
@@ -75,9 +70,6 @@ export function MemberDetailPage() {
     memberListRepository,
     branchRepository,
   } = useServices();
-  const { currentProfile } = useAuth();
-  /** UX gate only — purge-member re-checks server-side (REQ-MEM-008). */
-  const canPurge = isSystemAdmin(currentProfile?.roles);
   /** Set by RenewSubscriptionPage on success navigation (renew-checkout-page.md §7's "toast" — no
    * app-wide toast system exists yet, so a dismissible banner fills that role here). */
   const [successMessage, setSuccessMessage] = useState<string | null>((location.state as { toast?: string } | null)?.toast ?? null);
@@ -118,10 +110,9 @@ export function MemberDetailPage() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
-  const [purgeConfirmOpen, setPurgeConfirmOpen] = useState(false);
-  const [purgeConfirmText, setPurgeConfirmText] = useState('');
-  const [isPurging, setIsPurging] = useState(false);
-  const [purgeError, setPurgeError] = useState<string | null>(null);
+  const [subscriptionToDelete, setSubscriptionToDelete] = useState<Subscription | null>(null);
+  const [isDeletingSubscription, setIsDeletingSubscription] = useState(false);
+  const [deleteSubscriptionError, setDeleteSubscriptionError] = useState<string | null>(null);
 
   const [expandedSubscriptionIds, setExpandedSubscriptionIds] = useState<Set<number>>(new Set());
   const [editingSubscriptionId, setEditingSubscriptionId] = useState<number | null>(null);
@@ -148,7 +139,7 @@ export function MemberDetailPage() {
         withTimeout(subscriptionRepository.getHistoryForMember(memberId), FETCH_TIMEOUT_MS, new Error('history-fetch-timeout')),
         withTimeout(planRepository.getAllActive(), FETCH_TIMEOUT_MS, new Error('plans-fetch-timeout')),
         withTimeout(profileRepository.getAllActive(), FETCH_TIMEOUT_MS, new Error('profiles-fetch-timeout')),
-        withTimeout(profileRepository.getAllNonDeleted(), FETCH_TIMEOUT_MS, new Error('all-profiles-fetch-timeout')),
+        withTimeout(profileRepository.getAll(), FETCH_TIMEOUT_MS, new Error('all-profiles-fetch-timeout')),
         withTimeout(memberListRepository.getAll(), FETCH_TIMEOUT_MS, new Error('members-fetch-timeout')),
         withTimeout(branchRepository.getAllActive(), FETCH_TIMEOUT_MS, new Error('branches-fetch-timeout')),
       ]);
@@ -307,35 +298,35 @@ export function MemberDetailPage() {
     }
   }
 
-  function closePurgeDialog() {
-    setPurgeConfirmOpen(false);
-    setPurgeConfirmText('');
-    setPurgeError(null);
+  function closeDeleteSubscriptionDialog() {
+    setSubscriptionToDelete(null);
+    setDeleteSubscriptionError(null);
   }
 
-  async function handleConfirmPurge() {
-    if (!member || purgeConfirmText !== PURGE_CONFIRM_WORD) return;
-    setIsPurging(true);
-    setPurgeError(null);
+  /** Deletes one whole checkout (its items and header) for real. A checkout someone else already
+   * deleted is the outcome asked for, so a 404 just refreshes. Deleting the last one is what lets
+   * the member be deleted (delete-member refuses a member that subscriptions use). */
+  async function handleConfirmDeleteSubscription() {
+    if (!subscriptionToDelete) return;
+    setIsDeletingSubscription(true);
+    setDeleteSubscriptionError(null);
     try {
-      await memberRepository.purge(member.id);
-      navigate('/', { replace: true });
+      await subscriptionRepository.delete(subscriptionToDelete.id);
     } catch (err) {
-      const message = err instanceof Error ? err.message : '';
-      if (isNotFound(err)) {
-        navigate('/', { replace: true });
+      if (!isNotFound(err)) {
+        const message = err instanceof Error ? err.message : '';
+        setDeleteSubscriptionError(
+          isNetworkError(message)
+            ? "Couldn't delete — check your connection and try again."
+            : (refusalMessage(err) ?? 'Something went wrong deleting this subscription. Please try again.')
+        );
+        setIsDeletingSubscription(false);
         return;
       }
-      if (isNetworkError(message)) {
-        setPurgeError("Couldn't delete this member — check your connection and try again.");
-      } else if (message) {
-        // Includes the "Cannot purge — shared member on N other member(s) subscriptions" message verbatim.
-        setPurgeError(message);
-      } else {
-        setPurgeError('Something went wrong deleting this member. Please try again.');
-      }
-      setIsPurging(false);
     }
+    closeDeleteSubscriptionDialog();
+    setIsDeletingSubscription(false);
+    await load();
   }
 
   function toggleExpanded(subscriptionId: number) {
@@ -561,12 +552,6 @@ export function MemberDetailPage() {
                 <Trash2 size={16} strokeWidth={2} />
                 Delete
               </button>
-              {canPurge && (
-                <button type="button" className="member-detail-delete-link" onClick={() => setPurgeConfirmOpen(true)}>
-                  <Trash2 size={16} strokeWidth={2} />
-                  Delete permanently
-                </button>
-              )}
             </>
           ) : (
             <>
@@ -716,6 +701,15 @@ export function MemberDetailPage() {
                         <button type="button" className="member-detail-history-edit" onClick={() => startHistoryEdit(sub)}>
                           <Pencil size={14} strokeWidth={2} />
                           Edit
+                        </button>
+                        <button
+                          type="button"
+                          className="member-detail-history-delete"
+                          aria-label={`Delete subscription from ${toLocalDisplay(sub.created_at)}`}
+                          onClick={() => setSubscriptionToDelete(sub)}
+                        >
+                          <Trash2 size={14} strokeWidth={2} />
+                          Delete
                         </button>
                       </div>
 
@@ -1118,7 +1112,10 @@ export function MemberDetailPage() {
         <div className="member-detail-delete-backdrop">
           <div className="member-detail-delete-dialog">
             <h2>Delete member?</h2>
-            <p>"{member.name}" will be removed from the members list, search, and reports. This can't be undone from here.</p>
+            <p>
+              "{member.name}" and their photos will be deleted for good. <strong>This cannot be undone.</strong> A member who still has
+              subscriptions can't be deleted: delete those first, under Subscription History.
+            </p>
             {deleteError && <div className="member-detail-banner-error">{deleteError}</div>}
             <div className="member-detail-form-actions">
               <button type="button" className="member-detail-cancel" disabled={isDeleting} onClick={() => setDeleteConfirmOpen(false)}>
@@ -1134,40 +1131,28 @@ export function MemberDetailPage() {
         </div>
       )}
 
-      {purgeConfirmOpen && (
+      {subscriptionToDelete && (
         <div className="member-detail-delete-backdrop">
-          <div className="member-detail-delete-dialog" role="dialog" aria-labelledby="member-detail-purge-title">
-            <h2 id="member-detail-purge-title">Delete permanently?</h2>
+          <div className="member-detail-delete-dialog" role="dialog" aria-labelledby="member-detail-delete-sub-title">
+            <h2 id="member-detail-delete-sub-title">Delete subscription?</h2>
             <p>
-              "{member.name}" and all of their subscriptions, payment history, change history and photos will be erased
-              for good. <strong>This cannot be undone.</strong>
+              The checkout from {toLocalDisplay(subscriptionToDelete.created_at)}, with every plan and add-on in it, will be deleted
+              for good. It will no longer count in reports. <strong>This cannot be undone.</strong>
             </p>
-            <label className="member-detail-purge-label" htmlFor="member-detail-purge-input">
-              Type {PURGE_CONFIRM_WORD} to confirm
-            </label>
-            <input
-              id="member-detail-purge-input"
-              className="member-detail-purge-input"
-              value={purgeConfirmText}
-              disabled={isPurging}
-              autoComplete="off"
-              autoCapitalize="characters"
-              onChange={(e) => setPurgeConfirmText(e.target.value)}
-            />
-            {purgeError && <div className="member-detail-banner-error">{purgeError}</div>}
+            {deleteSubscriptionError && <div className="member-detail-banner-error">{deleteSubscriptionError}</div>}
             <div className="member-detail-form-actions">
-              <button type="button" className="member-detail-cancel" disabled={isPurging} onClick={closePurgeDialog}>
+              <button type="button" className="member-detail-cancel" disabled={isDeletingSubscription} onClick={closeDeleteSubscriptionDialog}>
                 <X size={18} strokeWidth={2} />
                 Cancel
               </button>
               <button
                 type="button"
                 className="member-detail-delete-confirm"
-                disabled={isPurging || purgeConfirmText !== PURGE_CONFIRM_WORD}
-                onClick={handleConfirmPurge}
+                disabled={isDeletingSubscription}
+                onClick={handleConfirmDeleteSubscription}
               >
-                {isPurging ? <RefreshCw size={18} strokeWidth={2} className="member-detail-spin" /> : <Trash2 size={18} strokeWidth={2} />}
-                {isPurging ? 'Deleting…' : 'Delete permanently'}
+                {isDeletingSubscription ? <RefreshCw size={18} strokeWidth={2} className="member-detail-spin" /> : <Trash2 size={18} strokeWidth={2} />}
+                {isDeletingSubscription ? 'Deleting…' : 'Delete'}
               </button>
             </div>
           </div>

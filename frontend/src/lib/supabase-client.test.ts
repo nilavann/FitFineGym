@@ -20,15 +20,19 @@ async function loadModule() {
 
 let realFetch: typeof fetch;
 let expired: ReturnType<typeof vi.fn>;
+let badKey: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
   realFetch = globalThis.fetch;
   expired = vi.fn();
+  badKey = vi.fn();
   window.addEventListener('supabase:session-expired', expired);
+  window.addEventListener('supabase:invalid-api-key', badKey);
 });
 afterEach(() => {
   globalThis.fetch = realFetch;
   window.removeEventListener('supabase:session-expired', expired);
+  window.removeEventListener('supabase:invalid-api-key', badKey);
   vi.unstubAllEnvs();
 });
 
@@ -115,5 +119,45 @@ describe('supabase-client — a 401 means the session died', () => {
     globalThis.fetch = vi.fn().mockRejectedValue(new TypeError('Failed to fetch')) as unknown as typeof fetch;
     await expect(wrappedFetch()('https://unit.supabase.co/rest/v1/members')).rejects.toThrow('Failed to fetch');
     expect(expired).not.toHaveBeenCalled();
+  });
+});
+
+describe('supabase-client — a rejected API key is not an expired session', () => {
+  const rejectKey = () => {
+    globalThis.fetch = vi.fn().mockImplementation(
+      async () =>
+        new Response(JSON.stringify({ message: 'Invalid API key', hint: 'Double check your Supabase `anon` or `service_role` API key.' }), {
+          status: 401,
+          headers: { 'content-type': 'application/json' },
+        })
+    ) as unknown as typeof fetch;
+  };
+
+  it.each([
+    ['REST', 'https://unit.supabase.co/rest/v1/profiles'],
+    ['/auth/v1, which a plain 401 would skip', 'https://unit.supabase.co/auth/v1/user'],
+  ])('dispatches the invalid-key event, not session-expired, for %s', async (_label, url) => {
+    await loadModule();
+    rejectKey();
+    await wrappedFetch()(url);
+    expect(badKey).toHaveBeenCalledTimes(1);
+    expect(expired).not.toHaveBeenCalled();
+  });
+
+  it('leaves the body readable for the SDK that made the request', async () => {
+    await loadModule();
+    rejectKey();
+    const response = await wrappedFetch()('https://unit.supabase.co/rest/v1/profiles');
+    await expect(response.json()).resolves.toMatchObject({ message: 'Invalid API key' });
+  });
+
+  it('does not mistake other 401 bodies (an Edge Function, an empty body) for it', async () => {
+    await loadModule();
+    globalThis.fetch = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ error: 'Invalid or expired session' }), { status: 401 })
+    ) as unknown as typeof fetch;
+    await wrappedFetch()('https://unit.supabase.co/functions/v1/create-subscription');
+    expect(badKey).not.toHaveBeenCalled();
+    expect(expired).toHaveBeenCalledTimes(1);
   });
 });

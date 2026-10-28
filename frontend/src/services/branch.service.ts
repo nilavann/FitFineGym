@@ -15,7 +15,7 @@ const CODE_REGEX = /^[A-Za-z0-9]{1,10}$/;
 
 /**
  * Client-side validation for instant feedback — `chk_branches_*` and `idx_branches_code_active`'s unique
- * index are the authoritative copy (spec/frontend/backend-api-changes.md §5, master-data-management.md §4).
+ * index are the authoritative copy (spec/frontend/backend-api.md §5, master-data-management.md §4).
  */
 export function validateBranch(form: BranchDraft): BranchFormErrors {
   const errors: BranchFormErrors = {};

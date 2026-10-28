@@ -1,6 +1,6 @@
 /**
  * The database's text rules (supabase/migrations/…_fitfine_constraints.sql, the `*_text` CHECKs), applied
- * on the client so a constraint is never the first line of feedback (spec/frontend/backend-api-changes.md §5).
+ * on the client so a constraint is never the first line of feedback (spec/frontend/backend-api.md §5).
  * Same character set as the Edge Functions' `_shared/validate.ts`: C0 controls, DEL, U+200B, U+200E-U+200F,
  * U+202A-U+202E, U+2060, U+2066-U+2069, U+FEFF, and lone surrogates. ZWNJ/ZWJ (U+200C, U+200D) stay:
  * Indic scripts need them in ordinary names. A multi-line field keeps its line feeds.

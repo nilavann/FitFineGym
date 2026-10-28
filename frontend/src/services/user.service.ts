@@ -64,8 +64,8 @@ export const userService = {
   validateEditUser,
   isFormValid,
 
-  async getAll(includeDeleted = false): Promise<ManagedUser[]> {
-    return profileRepository.getAllUsers(includeDeleted);
+  async getAll(): Promise<ManagedUser[]> {
+    return profileRepository.getAllUsers();
   },
 
   async invite(form: InviteUserDraft): Promise<void> {
@@ -81,14 +81,6 @@ export const userService = {
    */
   async update(id: string, patch: UpdateUser): Promise<Profile> {
     return profileRepository.update(id, patch.full_name === undefined ? patch : { ...patch, full_name: cleanText(patch.full_name) });
-  },
-
-  async delete(id: string): Promise<void> {
-    return profileRepository.delete(id);
-  },
-
-  async restore(id: string): Promise<void> {
-    return profileRepository.restore(id);
   },
 };
 

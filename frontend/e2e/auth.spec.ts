@@ -61,6 +61,46 @@ test.describe('the form', () => {
   });
 });
 
+test.describe('Forgot password when the email cannot be sent', () => {
+  const failRecover = (page: import('@playwright/test').Page, status: number, body: object) =>
+    page.route('**/auth/v1/recover**', (route) =>
+      route.fulfill({ status, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify(body) })
+    );
+
+  test('a rate limit is reported, not hidden behind "link sent", and a retry can still succeed', async ({ page, supabase }) => {
+    await failRecover(page, 429, { code: 429, error_code: 'over_email_send_rate_limit', msg: 'email rate limit exceeded' });
+    await page.goto('/login');
+    await page.getByLabel('Email').fill(STAFF.email);
+    await page.getByRole('button', { name: 'Forgot password?' }).click();
+
+    await expect(page.getByText('Too many reset requests. Please wait a few minutes before trying again.')).toBeVisible();
+    await expect(page.getByText('If that email is registered, a reset link has been sent.')).toHaveCount(0);
+    await expect(page.getByLabel('Email')).toHaveValue(STAFF.email);
+
+    await page.unroute('**/auth/v1/recover**');
+    await page.getByRole('button', { name: 'Forgot password?' }).click();
+    await expect(page.getByText('If that email is registered, a reset link has been sent.')).toBeVisible();
+    expect(supabase.calls('/auth/v1/recover').length).toBeGreaterThan(0);
+  });
+
+  test('an email service that is not set up for this address says so', async ({ page }) => {
+    await failRecover(page, 400, { code: 400, error_code: 'email_address_not_authorized', msg: 'Email address not authorized' });
+    await page.goto('/login');
+    await page.getByLabel('Email').fill(STAFF.email);
+    await page.getByRole('button', { name: 'Forgot password?' }).click();
+    await expect(page.getByText("The email service isn't set up to send to this address yet. Contact your administrator.")).toBeVisible();
+  });
+
+  test('a server error while sending gets a retry message and no raw provider text', async ({ page }) => {
+    await failRecover(page, 500, { code: 500, error_code: 'unexpected_failure', msg: 'Error sending recovery email: smtp 550' });
+    await page.goto('/login');
+    await page.getByLabel('Email').fill(STAFF.email);
+    await page.getByRole('button', { name: 'Forgot password?' }).click();
+    await expect(page.getByText(/Couldn't send the reset email\. Please try again/)).toBeVisible();
+    await expect(page.getByText(/smtp 550/)).toHaveCount(0);
+  });
+});
+
 test.describe('who is allowed in', () => {
   test('a deactivated account is refused, told why, and its session is not kept', async ({ page, supabase }) => {
     const gone: MockUser = { id: 'u-off', email: 'omar@fitandfine.in', password: 'secret-1' };

@@ -4,6 +4,8 @@ import { Mail, Lock, Eye, EyeOff, RefreshCw, CheckCircle2 } from 'lucide-react';
 import { useAuth } from '../context/auth.context';
 import { LoadingView } from '../components/LoadingView';
 import { withTimeout } from '../lib/with-timeout';
+import { INVALID_API_KEY_MESSAGE } from '../lib/config-errors';
+import { describeResetEmailFailure, RESET_EMAIL_TIMEOUT } from '../lib/reset-email-error';
 import logo from '../assets/logo.png';
 import './LoginPage.css';
 
@@ -137,6 +139,10 @@ export function LoginPage() {
     } catch (err) {
       if (err instanceof Error && err.message === 'sign-in-timeout') {
         setError('This is taking longer than expected. Check your connection and try again.');
+      } else if ((err as { status?: number } | null)?.status === 401) {
+        // A wrong password is a 400 (invalid_credentials). A 401 on the sign-in itself is Supabase
+        // refusing the app's own API key, which no password can fix.
+        setError(INVALID_API_KEY_MESSAGE);
       } else {
         // Never confirm/deny whether the email is registered.
         setError('Wrong email or password.');
@@ -164,14 +170,16 @@ export function LoginPage() {
       return;
     }
     setError(null);
+    setViewState('submitting');
     try {
-      await resetPasswordForEmail(email);
-    } catch {
-      // Deliberately swallowed: the user sees the same generic confirmation whether or not the send
-      // worked, so a failure can't be used to probe which emails are registered. (Without this catch
-      // the rejection escaped the click handler as an unhandled promise rejection.)
-    } finally {
+      await withTimeout(resetPasswordForEmail(email), SIGN_IN_TIMEOUT_MS, new Error(RESET_EMAIL_TIMEOUT));
+      // The same confirmation whether or not the email is registered: Supabase answers both alike.
       setViewState('reset-sent');
+    } catch (err) {
+      // A failure is shown, not swallowed: none of these says whether the account exists (see
+      // describeResetEmailFailure), and a user told "sent" when nothing was has no way to know to retry.
+      setError(describeResetEmailFailure(err));
+      setViewState('idle');
     }
   }
 

@@ -31,8 +31,8 @@ const ENTRIES: AuditLogEntry[] = [
 ];
 
 const USERS: ManagedUser[] = [
-  { ...buildProfile({ id: 'u2', full_name: 'Zed Staff' }), email: 'z@x.in', deleted_at: null },
-  { ...buildAdminProfile({ id: 'u1', full_name: 'Anita Admin' }), email: 'a@x.in', deleted_at: null },
+  { ...buildProfile({ id: 'u2', full_name: 'Zed Staff' }), email: 'z@x.in' },
+  { ...buildAdminProfile({ id: 'u1', full_name: 'Anita Admin' }), email: 'a@x.in' },
 ];
 
 function renderAudit(

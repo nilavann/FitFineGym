@@ -98,6 +98,17 @@ describe('LoginPage — the form', () => {
     expect(email()).toBeEnabled();
   });
 
+  it('says the app\'s API key is the problem, not the password, when the sign-in itself is refused with a 401', async () => {
+    const { user, auth } = renderLogin();
+    (auth.signInWithPassword as ReturnType<typeof vi.fn>).mockRejectedValue(Object.assign(new Error('Invalid API key'), { status: 401 }));
+    await user.type(email(), 'priya@fitandfine.in');
+    await user.type(password(), 'right-password');
+    await user.click(signIn());
+
+    expect(await screen.findByText(/its Supabase API key is invalid or disabled/)).toBeInTheDocument();
+    expect(screen.queryByText('Wrong email or password.')).not.toBeInTheDocument();
+  });
+
   it('times out a hung sign-in after 15s with its own message', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const { auth } = renderLogin();
@@ -142,12 +153,33 @@ describe('LoginPage — Google and password reset', () => {
     expect(await screen.findByText('If that email is registered, a reset link has been sent.')).toBeInTheDocument();
   });
 
-  it('gives the same confirmation even if sending fails (no enumeration via errors)', async () => {
+  it.each([
+    ['a send failure', new Error('smtp'), "Couldn't send the reset email. Please try again, and contact your administrator if it keeps happening."],
+    ['being offline', new Error('Failed to fetch'), "Couldn't send the email — check your connection and try again."],
+    ['the rate limit', Object.assign(new Error('rate'), { status: 429, code: 'over_email_send_rate_limit' }), 'Too many reset requests. Please wait a few minutes before trying again.'],
+    ['an unapproved recipient on the built-in mail service', Object.assign(new Error('nope'), { status: 400, code: 'email_address_not_authorized' }), "The email service isn't set up to send to this address yet. Contact your administrator."],
+    ['a rejected API key', Object.assign(new Error('Invalid API key'), { status: 401 }), /its Supabase API key is invalid or disabled/],
+  ])('says so when sending fails (%s) instead of claiming the link was sent', async (_label, error, message) => {
     const { user, auth } = renderLogin();
-    (auth.resetPasswordForEmail as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('smtp'));
+    (auth.resetPasswordForEmail as ReturnType<typeof vi.fn>).mockRejectedValue(error);
     await user.type(email(), 'x@fitandfine.in');
     await user.click(screen.getByRole('button', { name: 'Forgot password?' }));
+
+    expect(await screen.findByText(message)).toBeInTheDocument();
+    expect(screen.queryByText('If that email is registered, a reset link has been sent.')).not.toBeInTheDocument();
+    expect(email()).toHaveValue('x@fitandfine.in'); // nothing typed is lost, so retrying is one click
+  });
+
+  it('clears an earlier failure once a retry works', async () => {
+    const { user, auth } = renderLogin();
+    (auth.resetPasswordForEmail as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('smtp')).mockResolvedValue(undefined);
+    await user.type(email(), 'x@fitandfine.in');
+    await user.click(screen.getByRole('button', { name: 'Forgot password?' }));
+    await screen.findByText(/Couldn't send the reset email/);
+
+    await user.click(screen.getByRole('button', { name: 'Forgot password?' }));
     expect(await screen.findByText('If that email is registered, a reset link has been sent.')).toBeInTheDocument();
+    expect(screen.queryByText(/Couldn't send the reset email/)).not.toBeInTheDocument();
   });
 });
 

@@ -69,7 +69,7 @@ const tooLong = (value: string, max: number) => charLength(value) > max;
 
 /**
  * Shared by validateNewMember/validateMemberEdit — the `fitfine.members` CHECK constraints are the
- * authoritative copy (spec/frontend/backend-api-changes.md §5). Lengths are counted on the cleaned
+ * authoritative copy (spec/frontend/backend-api.md §5). Lengths are counted on the cleaned
  * value, in code points, exactly as the database will see it.
  */
 function validateMemberFields(form: MemberFieldsDraft): Partial<Record<keyof MemberFieldsDraft, string>> {

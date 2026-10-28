@@ -5,8 +5,6 @@ const mocks = vi.hoisted(() => ({
   getAllUsers: vi.fn(),
   invite: vi.fn(),
   update: vi.fn(),
-  delete: vi.fn(),
-  restore: vi.fn(),
 }));
 vi.mock('../repositories/profile.repository', () => ({
   profileRepository: mocks satisfies Partial<typeof profileRepository>,
@@ -59,12 +57,10 @@ describe('isFormValid', () => {
 });
 
 describe('userService', () => {
-  it('excludes soft-deleted users by default and can include them', async () => {
+  it('lists every user, deactivated ones included, with no include-deleted option', async () => {
     mocks.getAllUsers.mockResolvedValue([]);
     await userService.getAll();
-    await userService.getAll(true);
-    expect(mocks.getAllUsers).toHaveBeenNthCalledWith(1, false);
-    expect(mocks.getAllUsers).toHaveBeenNthCalledWith(2, true);
+    expect(mocks.getAllUsers).toHaveBeenCalledWith();
   });
 
   it('trims the email and name when inviting', async () => {
@@ -87,14 +83,5 @@ describe('userService', () => {
     await userService.update('u1', { full_name: '\u200bRavi', roles: ['staff'] });
     expect(mocks.invite).toHaveBeenCalledWith({ email: 'a@b.co', full_name: 'Ravi Kumar', roles: ['staff'] });
     expect(mocks.update).toHaveBeenCalledWith('u1', { full_name: 'Ravi', roles: ['staff'] });
-  });
-
-  it('delegates delete and restore by id', async () => {
-    mocks.delete.mockResolvedValue(undefined);
-    mocks.restore.mockResolvedValue(undefined);
-    await userService.delete('u1');
-    await userService.restore('u2');
-    expect(mocks.delete).toHaveBeenCalledWith('u1');
-    expect(mocks.restore).toHaveBeenCalledWith('u2');
   });
 });

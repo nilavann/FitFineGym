@@ -87,7 +87,7 @@ White section cards (radius 16px, border `#f1f1f3`, padding 20/22) with uppercas
 - Footer: Cancel (ghost) + "Create member"/"Save changes" (cta gradient), right-aligned. On save → member detail.
 
 ### 4. Member Detail — `/members/:id`
-Max 920px. Hero card: 68px avatar, name 19px/700 + status badge, meta line "FF-0231 · 98765 43210 · Female · joined 14 Feb 2026", "Handled by: …" (editable), Edit + Delete (red ghost, soft-delete confirm → members list).
+Max 920px. Hero card: 68px avatar, name 19px/700 + status badge, meta line "FF-0231 · 98765 43210 · Female · joined 14 Feb 2026", "Handled by: …" (editable), Edit + Delete (red ghost, delete confirm → members list).
 Two columns (1.0 / 1.15; stack ≤760px):
 - Left: Personal / Medical / Emergency cards as key-value rows (key 12.5px `#9ca3af`, value 13px/500 right-aligned, dividers `#f5f5f6`).
 - Right: **Current membership** card on tint gradient bg with accent section title, "Renew" CTA, plan 17px/700, dates + amount line, 6px progress bar (tint accent) + "12 days remaining"; **Add-ons** card ("+ Add" ghost) rows with status badges; **Subscription history** timeline rows (8px colored dot, title 13px/600, meta 11.5px, amount right 12.5px/600).

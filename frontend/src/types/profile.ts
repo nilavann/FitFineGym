@@ -17,5 +17,4 @@ export interface Profile {
  */
 export interface ManagedUser extends Profile {
   email: string;
-  deleted_at: string | null;
 }

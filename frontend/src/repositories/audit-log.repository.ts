@@ -49,7 +49,7 @@ interface RawEntry {
   changed_at: string;
 }
 
-// EAV growth here has no retention/partitioning story yet (domain-model-review.md) - a wide
+// EAV growth here has no retention/partitioning story yet - a wide
 // unfiltered range on a long-lived app could return an unbounded number of rows. Capped and
 // surfaced as `truncated` rather than silently returning a partial page with no indication.
 const MAX_ROWS = 500;

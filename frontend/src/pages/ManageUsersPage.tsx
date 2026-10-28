@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Plus, Pencil, Trash2, RefreshCw, RotateCcw, X, Check } from 'lucide-react';
+import { Plus, Pencil, RefreshCw, X, Check } from 'lucide-react';
 import { useAuth } from '../context/auth.context';
 import { useServices } from '../context/services.context';
 import { withTimeout } from '../lib/with-timeout';
@@ -11,16 +11,11 @@ import type { EditUserDraft, EditUserFormErrors } from '../services/user.service
 import { useIsTabletUp } from '../lib/use-media-query';
 import './ManageUsersPage.css';
 import { isNetworkError } from '../lib/network-error';
-import { isNotFound, refusalMessage } from '../lib/edge-function-error';
-import { SYSTEM_ADMIN_ROLE, isSystemAdmin } from '../lib/roles';
+import { refusalMessage } from '../lib/edge-function-error';
 
 const FETCH_TIMEOUT_MS = 10000;
 type LoadState = 'loading' | 'loaded' | 'network-error' | 'generic-error';
-type ActiveDialog =
-  | { type: 'toggle-active'; user: ManagedUser }
-  | { type: 'delete'; user: ManagedUser }
-  | { type: 'restore'; user: ManagedUser }
-  | null;
+type ActiveDialog = { type: 'toggle-active'; user: ManagedUser } | null;
 
 /** Manage Users (screens.md WSCR-09) — admin-only, list source is list-users (edge-functions.md §5), not a direct profiles read. */
 export function ManageUsersPage() {
@@ -34,7 +29,6 @@ export function ManageUsersPage() {
   const [users, setUsers] = useState<ManagedUser[]>([]);
   const [loadState, setLoadState] = useState<LoadState>('loading');
   const [availableRoles, setAvailableRoles] = useState<Role[]>([]);
-  const [showDeleted, setShowDeleted] = useState(false);
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<EditUserDraft>({ full_name: '', roles: [], is_active: true });
@@ -47,10 +41,10 @@ export function ManageUsersPage() {
   const [isConfirming, setIsConfirming] = useState(false);
   const [confirmError, setConfirmError] = useState<string | null>(null);
 
-  async function load(includeDeleted = showDeleted) {
+  async function load() {
     setLoadState('loading');
     try {
-      const data = await withTimeout(userService.getAll(includeDeleted), FETCH_TIMEOUT_MS, new Error('users-timeout'));
+      const data = await withTimeout(userService.getAll(), FETCH_TIMEOUT_MS, new Error('users-timeout'));
       setUsers(data);
       setLoadState('loaded');
     } catch (err) {
@@ -65,9 +59,9 @@ export function ManageUsersPage() {
   }, []);
 
   useEffect(() => {
-    load(showDeleted);
+    load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showDeleted]);
+  }, []);
 
   function openEditForm(user: ManagedUser) {
     setEditingId(user.id);
@@ -139,52 +133,6 @@ export function ManageUsersPage() {
     }
   }
 
-  async function handleConfirmDelete() {
-    if (dialog?.type !== 'delete') return;
-    setIsConfirming(true);
-    setConfirmError(null);
-    try {
-      await userService.delete(dialog.user.id);
-      setDialog(null);
-      await load();
-    } catch (err) {
-      const message = err instanceof Error ? err.message : '';
-      if (isNotFound(err)) {
-        // Already deleted elsewhere — refresh so the row disappears.
-        setDialog(null);
-        await load();
-        return;
-      }
-      setConfirmError(
-        isNetworkError(message)
-          ? "Couldn't delete — check your connection and try again."
-          : (refusalMessage(err) ?? 'Something went wrong deleting this user. Please try again.')
-      );
-    } finally {
-      setIsConfirming(false);
-    }
-  }
-
-  async function handleConfirmRestore() {
-    if (dialog?.type !== 'restore') return;
-    setIsConfirming(true);
-    setConfirmError(null);
-    try {
-      await userService.restore(dialog.user.id);
-      setDialog(null);
-      await load();
-    } catch (err) {
-      const message = err instanceof Error ? err.message : '';
-      setConfirmError(
-        isNetworkError(message)
-          ? "Couldn't restore — check your connection and try again."
-          : (refusalMessage(err) ?? 'Something went wrong restoring this user. Please try again.')
-      );
-    } finally {
-      setIsConfirming(false);
-    }
-  }
-
   if (loadState === 'loading') {
     return (
       <div className="users-page">
@@ -225,11 +173,6 @@ export function ManageUsersPage() {
 
       <p className="users-self-note">You can't change your own role or deactivate yourself.</p>
 
-      <label className="users-checkbox-label">
-        <input type="checkbox" checked={showDeleted} onChange={(e) => setShowDeleted(e.target.checked)} />
-        Show deleted users
-      </label>
-
       {successMessage && (
         <div className="users-banner-success">
           {successMessage}
@@ -257,7 +200,7 @@ export function ManageUsersPage() {
 
           <span className="users-chip-label">Roles</span>
           <div className="users-chip-row" role="group" aria-label="Roles">
-            {availableRoles.filter((role) => role.name !== SYSTEM_ADMIN_ROLE || isSystemAdmin(currentProfile?.roles)).map((role) => (
+            {availableRoles.map((role) => (
               <button
                 key={role.id}
                 type="button"
@@ -306,8 +249,6 @@ export function ManageUsersPage() {
                 variant="row"
                 onEdit={() => openEditForm(user)}
                 onToggleActive={() => setDialog({ type: 'toggle-active', user })}
-                onDelete={() => setDialog({ type: 'delete', user })}
-                onRestore={() => setDialog({ type: 'restore', user })}
               />
             ))}
           </tbody>
@@ -322,8 +263,6 @@ export function ManageUsersPage() {
               variant="card"
               onEdit={() => openEditForm(user)}
               onToggleActive={() => setDialog({ type: 'toggle-active', user })}
-              onDelete={() => setDialog({ type: 'delete', user })}
-              onRestore={() => setDialog({ type: 'restore', user })}
             />
           ))}
         </div>
@@ -352,46 +291,6 @@ export function ManageUsersPage() {
           </div>
         </div>
       )}
-
-      {dialog?.type === 'delete' && (
-        <div className="users-delete-backdrop">
-          <div className="users-delete-dialog">
-            <h2>Delete user?</h2>
-            <p>"{dialog.user.full_name}" will be removed from Manage Users. You can restore them later from "Show deleted users".</p>
-            {confirmError && <div className="users-banner-error">{confirmError}</div>}
-            <div className="users-form-actions">
-              <button type="button" className="users-cancel" disabled={isConfirming} onClick={() => setDialog(null)}>
-                <X size={18} strokeWidth={2} />
-                Cancel
-              </button>
-              <button type="button" className="users-delete-confirm" disabled={isConfirming} onClick={handleConfirmDelete}>
-                {isConfirming ? <RefreshCw size={18} strokeWidth={2} className="users-spin" /> : <Trash2 size={18} strokeWidth={2} />}
-                {isConfirming ? 'Deleting…' : 'Delete'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {dialog?.type === 'restore' && (
-        <div className="users-delete-backdrop">
-          <div className="users-delete-dialog">
-            <h2>Restore user?</h2>
-            <p>"{dialog.user.full_name}" will reappear in Manage Users.</p>
-            {confirmError && <div className="users-banner-error">{confirmError}</div>}
-            <div className="users-form-actions">
-              <button type="button" className="users-cancel" disabled={isConfirming} onClick={() => setDialog(null)}>
-                <X size={18} strokeWidth={2} />
-                Cancel
-              </button>
-              <button type="button" className="users-submit" disabled={isConfirming} onClick={handleConfirmRestore}>
-                {isConfirming ? <RefreshCw size={18} strokeWidth={2} className="users-spin" /> : <RotateCcw size={18} strokeWidth={2} />}
-                {isConfirming ? 'Restoring…' : 'Restore'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -402,53 +301,28 @@ function UserRow({
   variant,
   onEdit,
   onToggleActive,
-  onDelete,
-  onRestore,
 }: {
   user: ManagedUser;
   isSelf: boolean;
   variant: 'card' | 'row';
   onEdit: () => void;
   onToggleActive: () => void;
-  onDelete: () => void;
-  onRestore: () => void;
 }) {
-  const isDeleted = user.deleted_at !== null;
-
   const actions = (
     <div className={variant === 'card' ? 'users-card-actions' : 'users-table-actions'}>
-      {isDeleted ? (
-        <button type="button" className="users-edit-button" onClick={onRestore} aria-label={`Restore ${user.full_name}`}>
-          <RotateCcw size={14} strokeWidth={2} />
-          Restore
-        </button>
-      ) : (
-        <>
-          <button type="button" className="users-edit-button" onClick={onEdit} aria-label={`Edit ${user.full_name}`}>
-            <Pencil size={14} strokeWidth={2} />
-            Edit
-          </button>
-          <button
-            type="button"
-            className="users-edit-button"
-            onClick={onToggleActive}
-            disabled={isSelf}
-            aria-label={user.is_active ? `Deactivate ${user.full_name}` : `Reactivate ${user.full_name}`}
-          >
-            {user.is_active ? 'Deactivate' : 'Reactivate'}
-          </button>
-          <button
-            type="button"
-            className="users-delete-button"
-            onClick={onDelete}
-            disabled={isSelf}
-            aria-label={`Delete ${user.full_name}`}
-          >
-            <Trash2 size={14} strokeWidth={2} />
-            Delete
-          </button>
-        </>
-      )}
+      <button type="button" className="users-edit-button" onClick={onEdit} aria-label={`Edit ${user.full_name}`}>
+        <Pencil size={14} strokeWidth={2} />
+        Edit
+      </button>
+      <button
+        type="button"
+        className="users-edit-button"
+        onClick={onToggleActive}
+        disabled={isSelf}
+        aria-label={user.is_active ? `Deactivate ${user.full_name}` : `Reactivate ${user.full_name}`}
+      >
+        {user.is_active ? 'Deactivate' : 'Reactivate'}
+      </button>
     </div>
   );
 
@@ -461,9 +335,7 @@ function UserRow({
       ))}
     </span>
   );
-  const statusBadge = isDeleted ? (
-    <span className="users-status-badge users-status-deleted">Deleted</span>
-  ) : (
+  const statusBadge = (
     <span className={`users-status-badge${user.is_active ? ' users-status-active' : ' users-status-inactive'}`}>
       {user.is_active ? 'Active' : 'Deactivated'}
     </span>

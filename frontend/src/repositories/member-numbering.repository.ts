@@ -45,7 +45,7 @@ export const memberNumberingRepository = {
    * Atomic — all three configuration rows update together in one server-side transaction
    * (`update_member_number_config`), not three independent client-side `.update()` calls.
    * Three separate statements could partially succeed on a mid-batch failure, leaving the
-   * DB in a mixed old/new state the UI had no way to detect (spec/crud-review.md).
+   * DB in a mixed old/new state the UI had no way to detect.
    */
   async updateConfig(config: MemberNumberConfig): Promise<void> {
     const { error } = await supabase.rpc('update_member_number_config', {
