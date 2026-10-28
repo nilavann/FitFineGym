@@ -1,0 +1,407 @@
+.add-member-page {
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+@media (min-width: 768px) {
+  /* Wider than the mobile single-column max-width so two paired fields have real room
+     side-by-side instead of squeezing into two half-width columns of a narrow box. */
+  .add-member-page {
+    max-width: 900px;
+  }
+}
+
+.add-member-page h1 {
+  margin-top: 0;
+}
+
+.add-member-subtitle {
+  margin: 0.25rem 0 1.25rem;
+  color: var(--color-text-secondary);
+  font-size: 0.85rem;
+}
+
+.add-member-skeleton {
+  height: 400px;
+  border-radius: var(--radius-el);
+  background: linear-gradient(90deg, var(--color-neutral-50) 25%, var(--color-neutral-150) 37%, var(--color-neutral-50) 63%);
+  background-size: 400% 100%;
+  animation: add-member-shimmer 1.4s ease infinite;
+}
+
+@keyframes add-member-shimmer {
+  0% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0 50%;
+  }
+}
+
+/* Spinning "saving" indicator (RefreshCw icon on the Save button while a save is in flight). */
+@keyframes add-member-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.add-member-spin {
+  animation: add-member-spin 0.8s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .add-member-spin {
+    animation: none;
+  }
+}
+
+.add-member-load-error {
+  text-align: center;
+  padding: 3rem 1rem;
+  color: var(--color-text-secondary);
+}
+
+.add-member-retry,
+.add-member-submit,
+.add-member-cancel,
+.add-member-photo-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 44px;
+  min-width: 44px;
+}
+
+.add-member-retry {
+  background: linear-gradient(to bottom, var(--cta-from), var(--cta-to));
+  color: var(--color-text-inverse);
+  border: none;
+  border-radius: var(--radius-el);
+  padding: 0.6rem 1.25rem;
+  font-weight: 600;
+  cursor: pointer;
+  margin-top: 1rem;
+  transition: opacity 0.15s ease, transform 0.1s ease;
+}
+
+.add-member-retry:hover {
+  opacity: 0.92;
+}
+
+.add-member-retry:active {
+  transform: scale(0.97);
+}
+
+.add-member-banner-error {
+  background: var(--color-status-danger-bg-subtle);
+  border: 1px solid var(--color-status-danger-border);
+  color: var(--color-status-danger-text);
+  padding: 0.75rem 1rem;
+  border-radius: var(--radius-el);
+  margin-bottom: 1rem;
+  font-size: 0.85rem;
+}
+
+.add-member-section {
+  /* A <fieldset> defaults to min-width: min-content, so it stretches to its widest child instead of
+     shrinking to the screen — it was 522px wide on a 390px phone. rules.md rule 16d. */
+  min-width: 0;
+  border: 1px solid var(--color-border-card);
+  border-radius: 16px;
+  padding: 1.1rem 1.25rem;
+  margin-bottom: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  background: var(--color-neutral-0);
+}
+
+.add-member-section legend {
+  font-weight: 700;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-muted);
+  padding: 0 0.35rem;
+}
+
+.add-member-section label {
+  color: var(--color-text-secondary);
+  font-size: 0.82rem;
+  font-weight: 600;
+  margin-top: 0.5rem;
+}
+
+/* Field pairing (mobile: one per row, desktop: two per row). */
+.add-member-field-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.75rem;
+}
+
+.add-member-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+/* Spacing comes from the grid's gap now, not each label's own top margin - avoids doubling
+   up on vertical space between a field and the one above it in the same grid row. */
+.add-member-field label {
+  margin-top: 0;
+}
+
+@media (min-width: 768px) {
+  .add-member-field-grid {
+    grid-template-columns: 1fr 1fr;
+    column-gap: 1.5rem;
+  }
+
+  .add-member-field-span-2 {
+    grid-column: 1 / -1;
+  }
+}
+
+.add-member-section input,
+.add-member-section select,
+.add-member-section textarea {
+  /* An input's intrinsic width (size=20, ~230px at 16px type) is its min-content, which a grid/flex
+     track will not shrink below unless told to. */
+  min-width: 0;
+  background: var(--color-surface-input);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-el);
+  padding: 0.6rem 0.75rem;
+  font-size: 0.85rem;
+  color: var(--color-text-primary);
+  min-height: 44px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.add-member-section textarea {
+  min-height: 78px;
+  resize: vertical;
+}
+
+.add-member-section input:focus,
+.add-member-section select:focus,
+.add-member-section textarea:focus {
+  outline: none;
+  border-color: var(--tint-accent);
+  box-shadow: 0 0 0 3px var(--tint-focus-ring);
+}
+
+.add-member-error {
+  color: var(--color-status-danger-text-deep);
+  font-size: 0.75rem;
+  margin: 0;
+}
+
+.add-member-helper {
+  color: var(--color-text-muted);
+  font-size: 0.75rem;
+  margin: 0;
+}
+
+.add-member-required {
+  color: var(--color-status-danger-text-deep);
+  font-weight: 700;
+}
+
+/* Body Metrics: side-by-side pair even on mobile - two short numeric fields fit fine. */
+.add-member-metrics-row {
+  display: grid;
+  /* minmax(0, 1fr), not 1fr: a bare 1fr is minmax(auto, 1fr), so the tracks could not shrink below
+     the inputs' intrinsic width and the pair pushed the page wider than a phone. */
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.add-member-metrics-row > div {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.add-member-chip-label {
+  color: var(--color-text-secondary);
+  font-size: 0.82rem;
+  font-weight: 600;
+  margin-top: 0.5rem;
+}
+
+/* Reset for the Gender field specifically - it's now inside .add-member-field (grid
+   cell), where spacing comes from the grid's gap, same reasoning as the label reset above. */
+.add-member-field .add-member-chip-label {
+  margin-top: 0;
+}
+
+.add-member-chip-row {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.add-member-chip {
+  flex: 1;
+  min-height: 44px;
+  padding: 0.5rem 1rem;
+  border-radius: var(--radius-el);
+  border: 1px solid var(--color-border-default);
+  background: var(--color-neutral-0);
+  color: var(--color-text-secondary);
+  font-size: 0.82rem;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, transform 0.1s ease;
+}
+
+.add-member-chip:hover {
+  border-color: var(--tint-accent);
+}
+
+.add-member-chip:active {
+  transform: scale(0.96);
+}
+
+.add-member-chip-selected {
+  background: var(--tint-pill-bg);
+  border-color: var(--tint-border);
+  color: var(--tint-on-pill);
+  font-weight: 700;
+}
+
+/* Doctor's-care toggle switch */
+.add-member-toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  cursor: pointer;
+  color: var(--color-text-primary);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.add-member-toggle {
+  display: inline-flex;
+  align-items: center;
+  width: 44px;
+  height: 24px;
+  border-radius: 999px;
+  background: var(--color-neutral-200);
+  padding: 2px;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+  flex-shrink: 0;
+}
+
+.add-member-toggle-on {
+  background: var(--tint-accent);
+}
+
+.add-member-toggle-knob {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--color-neutral-0);
+  box-shadow: 0 1px 3px var(--color-shadow);
+  transition: transform 0.15s ease;
+}
+
+.add-member-toggle-on .add-member-toggle-knob {
+  transform: translateX(20px);
+}
+
+.add-member-photo-preview {
+  width: 64px;
+  height: 64px;
+  border-radius: var(--radius-tile);
+  object-fit: cover;
+  margin-bottom: 0.5rem;
+  box-shadow: 0 2px 6px var(--color-shadow);
+}
+
+.add-member-photo-actions {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.add-member-photo-actions button {
+  background: var(--color-neutral-0);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-el);
+  padding: 0.5rem 1rem;
+  font-size: 0.82rem;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.add-member-photo-actions button:hover {
+  background: var(--color-surface-page);
+  border-color: var(--color-neutral-300);
+}
+
+.add-member-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  padding-bottom: 2rem;
+}
+
+.add-member-cancel,
+.add-member-submit {
+  min-height: 44px;
+  border-radius: var(--radius-el);
+  padding: 0.75rem 2rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.15s ease, opacity 0.15s ease, box-shadow 0.15s ease, transform 0.1s ease;
+}
+
+.add-member-cancel {
+  background: var(--color-neutral-0);
+  border: 1px solid var(--color-border-default);
+  color: var(--color-text-secondary);
+}
+
+.add-member-cancel:hover:not(:disabled) {
+  background: var(--color-surface-page);
+}
+
+.add-member-cancel:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.add-member-cancel:disabled {
+  color: var(--color-text-disabled);
+  cursor: not-allowed;
+}
+
+.add-member-submit {
+  background: linear-gradient(to bottom, var(--cta-from), var(--cta-to));
+  color: var(--color-text-inverse);
+  border: none;
+  box-shadow: 0 1px 3px var(--color-shadow);
+}
+
+.add-member-submit:hover:not(:disabled) {
+  opacity: 0.92;
+  box-shadow: 0 4px 10px var(--color-shadow);
+}
+
+.add-member-submit:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.add-member-submit:disabled {
+  background: var(--color-interactive-disabled-bg);
+  color: var(--color-interactive-disabled-text);
+  cursor: not-allowed;
+  box-shadow: none;
+}

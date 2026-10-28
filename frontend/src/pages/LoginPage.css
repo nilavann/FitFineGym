@@ -1,0 +1,356 @@
+.login-page {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-surface-page);
+  padding: 2rem 1rem;
+}
+
+.login-card {
+  width: 100%;
+  max-width: 380px;
+  background: linear-gradient(to bottom, var(--tint-card-from), var(--tint-card-to));
+  border: 1px solid var(--tint-border);
+  border-radius: var(--radius-card);
+  padding: 2.25rem 2rem;
+  box-shadow: 0 20px 40px var(--color-shadow);
+  animation: login-card-in 0.25s ease;
+}
+
+.login-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 80px;
+  height: 80px;
+  border-radius: var(--radius-tile);
+  background: var(--color-neutral-0);
+  color: var(--color-text-primary);
+  box-shadow: 0 6px 16px var(--color-shadow);
+  margin: 0 auto 1rem;
+}
+
+/* Brand logo (v2) - the PNG mark carries its own color/shape, sized to the spec's 64px
+   login-card height, aspect ratio preserved, inside the existing white tile above. */
+.login-badge-logo {
+  height: 64px;
+  width: auto;
+}
+
+@keyframes login-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .login-card {
+    animation: none;
+  }
+}
+
+.login-brand {
+  margin: 0;
+  text-align: center;
+  color: var(--color-text-primary);
+  font-size: 1.375rem;
+  font-weight: 600;
+}
+
+.login-subtitle {
+  margin: 0.4rem 0 1.5rem;
+  text-align: center;
+  color: var(--color-text-secondary);
+  font-size: 0.84rem;
+}
+
+.login-error {
+  background: var(--color-status-danger-bg-subtle);
+  border: 1px solid var(--color-status-danger-border);
+  color: var(--color-status-danger-text);
+  padding: 0.65rem 0.8rem;
+  border-radius: var(--radius-el);
+  font-size: 0.78rem;
+  margin-bottom: 1rem;
+}
+
+.login-notice {
+  background: var(--color-status-success-bg-subtle);
+  border: 1px solid var(--color-status-success-border);
+  color: var(--color-status-success-text-deep);
+  padding: 0.65rem 0.8rem;
+  border-radius: var(--radius-el);
+  font-size: 0.78rem;
+  margin-bottom: 1rem;
+}
+
+/* Signed-out screen (v2) - replaces the form entirely inside .login-card, not a banner on
+   top of it. */
+.login-signed-out-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: var(--color-status-success-bg);
+  color: var(--color-status-success-text);
+  margin: 0 auto 1rem;
+}
+
+.login-signed-out-progress-track {
+  width: 100%;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.6);
+  overflow: hidden;
+  margin: 0.25rem 0 0.5rem;
+}
+
+.login-signed-out-progress-fill {
+  height: 100%;
+  width: 100%;
+  background: var(--tint-accent);
+  border-radius: 999px;
+  transform-origin: left;
+  animation-name: login-signed-out-progress;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
+}
+
+@keyframes login-signed-out-progress {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .login-signed-out-progress-fill {
+    animation: none;
+    transform: scaleX(1);
+  }
+}
+
+.login-signed-out-cta {
+  margin-top: 0.5rem;
+}
+
+.login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.login-label {
+  color: var(--color-text-secondary);
+  font-size: 0.8rem;
+  font-weight: 600;
+  margin-top: 0.5rem;
+}
+
+.login-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.login-input-icon {
+  position: absolute;
+  left: 0.7rem;
+  color: var(--color-text-muted);
+  pointer-events: none;
+}
+
+.login-input {
+  width: 100%;
+  background: var(--color-surface-input);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-el);
+  padding: 0.6rem 0.75rem 0.6rem 2.25rem;
+  font-size: 0.85rem;
+  color: var(--color-text-primary);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.login-input:focus {
+  outline: none;
+  border-color: var(--tint-accent);
+  box-shadow: 0 0 0 3px var(--tint-focus-ring);
+}
+
+.login-input:disabled {
+  background: var(--color-neutral-100);
+  border-color: var(--color-neutral-150);
+}
+
+.login-input-has-toggle {
+  padding-right: 2.5rem;
+}
+
+.login-toggle-visibility {
+  position: absolute;
+  right: 0.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  background: none;
+  border: none;
+  border-radius: 6px;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition: color 0.15s ease, background-color 0.15s ease;
+}
+
+.login-toggle-visibility:hover:not(:disabled) {
+  color: var(--color-text-secondary);
+  background: var(--color-neutral-100);
+}
+
+.login-toggle-visibility:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* Browser autofill (email/password are prime autofill targets) paints its own
+   background via UA styling that ignores a plain `background` override - the
+   inset box-shadow + explicit text-fill-color trick is the only reliable way
+   to force it back to our actual input colors instead of a browser default
+   that may not match our light card. */
+.login-input:-webkit-autofill,
+.login-input:-webkit-autofill:hover,
+.login-input:-webkit-autofill:focus {
+  -webkit-text-fill-color: var(--color-text-primary);
+  box-shadow: 0 0 0 1000px var(--color-surface-input) inset;
+  transition: background-color 0s 600000s, color 0s 600000s;
+}
+
+.login-forgot-link {
+  align-self: flex-end;
+  background: none;
+  border: none;
+  color: var(--color-text-secondary);
+  font-size: 0.75rem;
+  cursor: pointer;
+  padding: 0.25rem 0;
+  transition: color 0.15s ease;
+}
+
+.login-forgot-link:hover {
+  color: var(--tint-ink);
+  text-decoration: underline;
+}
+
+.login-submit {
+  margin-top: 0.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  background: linear-gradient(to bottom, var(--cta-from), var(--cta-to));
+  color: var(--color-text-inverse);
+  border: none;
+  border-radius: var(--radius-el);
+  padding: 0.75rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 6px 14px var(--color-shadow);
+  transition: opacity 0.15s ease, box-shadow 0.15s ease, transform 0.1s ease;
+}
+
+.login-submit:hover:not(:disabled) {
+  opacity: 0.92;
+  box-shadow: 0 8px 18px var(--color-shadow);
+}
+
+.login-submit:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.login-submit:disabled {
+  background: var(--color-interactive-disabled-bg);
+  color: var(--color-interactive-disabled-text);
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+@keyframes login-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.login-spin {
+  animation: login-spin 0.8s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .login-spin {
+    animation: none;
+  }
+}
+
+.login-divider {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  color: var(--color-text-muted);
+  font-size: 0.75rem;
+  margin: 1.25rem 0;
+}
+
+.login-divider::before,
+.login-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  border-top: 1px dashed var(--color-border-default);
+}
+
+.login-google {
+  width: 100%;
+  height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  background: var(--color-neutral-0);
+  color: var(--color-text-primary);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-el);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
+}
+
+.login-google:hover {
+  background: var(--color-neutral-50);
+  border-color: var(--color-neutral-200);
+}
+
+.login-google:active {
+  transform: scale(0.98);
+}
+
+.login-footer {
+  margin: 1.25rem 0 0;
+  text-align: center;
+  color: var(--color-text-muted);
+  font-size: 0.68rem;
+}

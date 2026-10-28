@@ -1,0 +1,298 @@
+.audit-log-page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.audit-log-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.audit-log-filter-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.audit-log-filter-field label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+
+.audit-log-filter-field input,
+.audit-log-filter-field select {
+  background: var(--color-surface-input);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-el);
+  padding: 0.5rem 0.75rem;
+  font-size: 0.85rem;
+  min-height: 44px;
+}
+
+.audit-log-filter-field input:focus,
+.audit-log-filter-field select:focus {
+  outline: none;
+  border-color: var(--tint-accent);
+  box-shadow: 0 0 0 3px var(--tint-focus-ring);
+}
+
+.audit-log-apply {
+  min-height: 44px;
+  background: linear-gradient(to bottom, var(--cta-from), var(--cta-to));
+  color: var(--color-text-inverse);
+  border: none;
+  border-radius: var(--radius-el);
+  padding: 0 1.5rem;
+  font-weight: 600;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+
+.audit-log-apply:hover {
+  opacity: 0.92;
+}
+
+.audit-log-range-error {
+  color: var(--color-status-danger-text-deep);
+  font-size: 0.82rem;
+  margin: 0.5rem 0 0;
+}
+
+.audit-log-skeleton {
+  height: 220px;
+  border-radius: var(--radius-el);
+  margin: 1rem 0;
+  background: linear-gradient(90deg, var(--color-neutral-50) 25%, var(--color-neutral-150) 37%, var(--color-neutral-50) 63%);
+  background-size: 400% 100%;
+  animation: audit-log-shimmer 1.4s ease infinite;
+}
+
+@keyframes audit-log-shimmer {
+  0% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0 50%;
+  }
+}
+
+.audit-log-load-error {
+  text-align: center;
+  padding: 2rem 1rem;
+  color: var(--color-text-secondary);
+}
+
+.audit-log-retry {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 44px;
+  background: linear-gradient(to bottom, var(--cta-from), var(--cta-to));
+  color: var(--color-text-inverse);
+  border: none;
+  border-radius: var(--radius-el);
+  padding: 0.6rem 1.25rem;
+  font-weight: 600;
+  cursor: pointer;
+  margin-top: 1rem;
+  transition: opacity 0.15s ease, transform 0.1s ease;
+}
+
+.audit-log-retry:hover {
+  opacity: 0.92;
+}
+
+.audit-log-retry:active {
+  transform: scale(0.97);
+}
+
+.audit-log-truncated-notice {
+  color: var(--color-status-warning-text);
+  background: var(--color-status-warning-bg);
+  border-radius: var(--radius-el);
+  padding: 0.6rem 0.75rem;
+  font-size: 0.82rem;
+  margin: 1rem 0;
+}
+
+.audit-log-empty {
+  color: var(--color-text-secondary);
+  padding: 2rem 1rem;
+  text-align: center;
+  background: var(--color-neutral-0);
+  border: 1px solid var(--color-border-card);
+  border-radius: var(--radius-el);
+  margin: 1rem 0;
+  font-size: 0.85rem;
+}
+
+/* Operation badges */
+
+.audit-log-op-badge {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 0.15rem 0.55rem;
+  border-radius: var(--radius-pill);
+  white-space: nowrap;
+}
+
+.audit-log-op-insert {
+  background: var(--color-status-success-bg);
+  color: var(--color-status-success-text);
+}
+
+.audit-log-op-update {
+  background: var(--color-status-warning-bg);
+  color: var(--color-status-warning-text);
+}
+
+.audit-log-op-delete {
+  background: var(--color-status-danger-bg);
+  color: var(--color-status-danger-text);
+}
+
+/* Diff pills — old value (red) → new value (green) */
+
+.audit-log-diff-old,
+.audit-log-diff-new {
+  display: inline-block;
+  padding: 0.1rem 0.5rem;
+  border-radius: var(--radius-pill);
+  font-size: 0.78rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.audit-log-diff-old {
+  background: var(--color-status-danger-bg);
+  color: var(--color-status-danger-text);
+}
+
+.audit-log-diff-new {
+  background: var(--color-status-success-bg);
+  color: var(--color-status-success-text);
+}
+
+.audit-log-diff-arrow {
+  margin: 0 0.4rem;
+  color: var(--color-text-muted);
+}
+
+/* Cards - mobile default */
+
+.audit-log-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.audit-log-card {
+  background: var(--color-neutral-0);
+  border: 1px solid var(--color-border-card);
+  border-radius: 16px;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.audit-log-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.audit-log-card-when {
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+}
+
+.audit-log-card-target {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--color-text-primary);
+}
+
+.audit-log-card-diff {
+  margin: 0;
+  font-size: 0.85rem;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.audit-log-card-who {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+}
+
+/* Table - desktop only */
+
+.audit-log-table {
+  display: none;
+}
+
+@media (min-width: 768px) {
+  .audit-log-cards {
+    display: none;
+  }
+
+  .audit-log-table {
+    display: table;
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0 0.5rem;
+    margin-top: 1rem;
+  }
+
+  .audit-log-table th,
+  .audit-log-table td {
+    text-align: left;
+    padding: 0.75rem 1rem;
+    font-variant-numeric: tabular-nums;
+    font-size: 0.85rem;
+    color: var(--color-text-secondary);
+  }
+
+  .audit-log-table th {
+    color: var(--color-text-muted);
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding-top: 0;
+  }
+
+  .audit-log-table tbody tr {
+    background: var(--color-neutral-0);
+  }
+
+  .audit-log-table tbody tr td:first-child {
+    border-top-left-radius: var(--radius-el);
+    border-bottom-left-radius: var(--radius-el);
+    border-left: 1px solid var(--color-border-card);
+  }
+
+  .audit-log-table tbody tr td:last-child {
+    border-top-right-radius: var(--radius-el);
+    border-bottom-right-radius: var(--radius-el);
+    border-right: 1px solid var(--color-border-card);
+  }
+
+  .audit-log-table tbody tr td {
+    border-top: 1px solid var(--color-border-card);
+    border-bottom: 1px solid var(--color-border-card);
+  }
+}

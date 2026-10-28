@@ -1,0 +1,751 @@
+.members-page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.members-add-link {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: linear-gradient(to bottom, var(--cta-from), var(--cta-to));
+  color: var(--color-text-inverse);
+  border-radius: var(--radius-el);
+  padding: 0 1.25rem;
+  font-weight: 600;
+  font-size: 0.85rem;
+  text-decoration: none;
+  transition: opacity 0.15s ease, transform 0.1s ease;
+}
+
+.members-add-link:hover {
+  opacity: 0.92;
+}
+
+.members-add-link:active {
+  transform: scale(0.97);
+}
+
+.members-skeleton {
+  height: 400px;
+  border-radius: var(--radius-el);
+  margin-top: 1rem;
+  background: linear-gradient(90deg, var(--color-neutral-50) 25%, var(--color-neutral-150) 37%, var(--color-neutral-50) 63%);
+  background-size: 400% 100%;
+  animation: members-shimmer 1.4s ease infinite;
+}
+
+@keyframes members-shimmer {
+  0% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0 50%;
+  }
+}
+
+.members-load-error {
+  text-align: center;
+  padding: 3rem 1rem;
+  color: var(--color-text-secondary);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.members-load-error-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background: var(--color-status-danger-bg);
+  color: var(--color-status-danger-text);
+  margin-bottom: 0.5rem;
+}
+
+.members-load-error-title {
+  margin: 0;
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: var(--color-text-primary);
+}
+
+.members-load-error-body {
+  margin: 0;
+  font-size: 0.85rem;
+  max-width: 320px;
+}
+
+.members-retry {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 44px;
+  background: linear-gradient(to bottom, var(--cta-from), var(--cta-to));
+  color: var(--color-text-inverse);
+  border: none;
+  border-radius: var(--radius-el);
+  padding: 0.6rem 1.25rem;
+  font-weight: 600;
+  cursor: pointer;
+  margin-top: 0.5rem;
+  transition: opacity 0.15s ease, transform 0.1s ease;
+}
+
+.members-retry:hover {
+  opacity: 0.92;
+}
+
+.members-retry:active {
+  transform: scale(0.97);
+}
+
+/* Controls: search, status pills, sort + filter toggle, applied-filter chips */
+
+.members-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin: 1rem 0;
+}
+
+.members-search-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  max-width: 340px;
+}
+
+.members-search-icon {
+  position: absolute;
+  left: 0.75rem;
+  color: var(--color-text-muted);
+  pointer-events: none;
+}
+
+.members-search {
+  width: 100%;
+  min-height: 44px;
+  background: var(--color-surface-input);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-el);
+  padding: 0.6rem 0.75rem 0.6rem 2.5rem;
+  font-size: 0.85rem;
+  color: var(--color-text-primary);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.members-search:focus {
+  outline: none;
+  border-color: var(--tint-accent);
+  box-shadow: 0 0 0 3px var(--tint-focus-ring);
+}
+
+.members-pill-row {
+  display: flex;
+  gap: 0.5rem;
+  /* README §Members: the status pills scroll horizontally if they overflow and never wrap to a
+     second line. The padding + equal negative margin leave room inside the scroll container for the
+     2px keyboard-focus ring + offset, which overflow-x would otherwise clip. */
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding: 4px;
+  margin: -4px;
+}
+
+.members-pill-row::-webkit-scrollbar {
+  display: none;
+}
+
+.members-pill {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 44px;
+  padding: 0.4rem 0.85rem 0.4rem 1rem;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--color-border-default);
+  background: var(--color-neutral-0);
+  color: var(--color-text-secondary);
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, transform 0.1s ease;
+}
+
+.members-pill-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.4rem;
+  height: 1.4rem;
+  padding: 0 0.35rem;
+  border-radius: var(--radius-pill);
+  background: var(--color-surface-page);
+  color: var(--color-text-muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.members-pill-active .members-pill-count {
+  background: rgba(255, 255, 255, 0.25);
+  color: var(--color-text-inverse);
+}
+
+.members-pill:hover {
+  border-color: var(--tint-accent);
+}
+
+.members-pill:active {
+  transform: scale(0.96);
+}
+
+.members-pill-active {
+  /* Solid fill carrying white text - --tint-solid, not --tint-accent (Accessibility contract). */
+  background: var(--tint-solid);
+  border-color: var(--tint-solid);
+  color: var(--color-text-inverse);
+  font-weight: 700;
+}
+
+.members-pill-active:hover {
+  border-color: var(--tint-solid);
+}
+
+.members-controls-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+/* Pushes just the Filters button to the far right (not justify-content: space-between on
+   the row itself), so a wrapped/narrow state still keeps Sort left-aligned rather than the
+   two controls snapping to opposite screen edges at every width. */
+.members-filter-toggle {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.members-sort,
+.members-filter-toggle {
+  min-height: 44px;
+  border-radius: var(--radius-el);
+  border: 1px solid var(--color-border-default);
+  background: var(--color-neutral-0);
+  color: var(--color-text-primary);
+  padding: 0 0.75rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.members-sort:hover,
+.members-filter-toggle:hover {
+  border-color: var(--color-neutral-300);
+  background: var(--color-surface-page);
+}
+
+.members-filter-toggle-active {
+  background: var(--tint-pill-bg);
+  border-color: var(--tint-border);
+  color: var(--tint-on-pill);
+}
+
+.members-filter-toggle-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.2rem;
+  height: 1.2rem;
+  padding: 0 0.3rem;
+  border-radius: var(--radius-pill);
+  background: var(--tint-solid);
+  color: var(--color-text-inverse);
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+/* Table/Cards view toggle - desktop only (>=768px); below that, cards render regardless of
+   the chosen mode, so the toggle itself is hidden rather than offering a no-op control. */
+.members-view-toggle {
+  display: none;
+}
+
+@media (min-width: 768px) {
+  .members-view-toggle {
+    display: inline-flex;
+    border: 1px solid var(--color-border-default);
+    border-radius: var(--radius-el);
+    overflow: hidden;
+  }
+
+  .members-view-toggle-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 40px;
+    min-height: 40px;
+    background: var(--color-neutral-0);
+    border: none;
+    color: var(--color-text-secondary);
+    cursor: pointer;
+    transition: background-color 0.15s ease, color 0.15s ease;
+  }
+
+  .members-view-toggle-btn + .members-view-toggle-btn {
+    border-left: 1px solid var(--color-border-default);
+  }
+
+  .members-view-toggle-btn:hover {
+    background: var(--color-surface-page);
+  }
+
+  .members-view-toggle-btn-active {
+    background: var(--tint-pill-bg);
+    color: var(--tint-on-pill);
+  }
+}
+
+.members-applied-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.members-applied-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0.35rem 0.3rem 0.75rem;
+  border-radius: var(--radius-pill);
+  background: var(--tint-pill-bg);
+  color: var(--tint-on-pill);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.members-applied-chip button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  border-radius: 50%;
+}
+
+.members-applied-chip button:hover {
+  background: rgba(0, 0, 0, 0.08);
+}
+
+/* Filter drawer body content (drawer chrome itself lives in components/FilterDrawer.css) */
+
+.members-filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.members-filter-label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-muted);
+}
+
+.members-filter-checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-height: 32px;
+  font-size: 0.85rem;
+  color: var(--color-text-primary);
+  cursor: pointer;
+}
+
+.members-filter-checkbox-row input[type='checkbox'] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--tint-accent);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.members-result-count {
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
+  margin: 0 0 0.75rem;
+}
+
+.members-empty {
+  text-align: center;
+  padding: 3rem 1rem;
+  color: var(--color-text-secondary);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.members-clear-link {
+  background: none;
+  border: none;
+  color: var(--tint-ink);
+  font-weight: 600;
+  font-size: 0.78rem;
+  cursor: pointer;
+  min-height: 44px;
+  transition: opacity 0.15s ease;
+}
+
+.members-clear-link:hover {
+  text-decoration: underline;
+}
+
+/* Status badges and status text (.status-badge-*, .status-text-*) live in styles/status.css. */
+
+/* Avatar */
+
+.members-avatar {
+  width: 38px;
+  height: 38px;
+  min-width: 38px;
+  border-radius: var(--radius-tile);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-inverse);
+  font-weight: 700;
+  font-size: 0.8rem;
+}
+
+.members-avatar-img {
+  width: 38px;
+  height: 38px;
+  min-width: 38px;
+  border-radius: var(--radius-tile);
+  object-fit: cover;
+}
+
+.members-avatar-clickable {
+  cursor: zoom-in;
+  transition: transform 0.1s ease;
+}
+
+.members-avatar-clickable:hover {
+  transform: scale(1.08);
+}
+
+/* Row actions - Renew (filled) + View (outlined), replaces the old single Edit icon
+   (design_handoff_flexhub_v2/README.md "Members list row actions"). Shared by both the
+   table row's actions cell and the mobile/cards-view card's action row. */
+.members-row-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.members-row-renew,
+.members-row-view {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+  min-height: 36px;
+  padding: 0 0.7rem;
+  border-radius: var(--radius-el);
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s ease, background-color 0.15s ease;
+}
+
+.members-row-renew {
+  border: none;
+  background: linear-gradient(to bottom, var(--cta-from), var(--cta-to));
+  color: var(--color-text-inverse);
+}
+
+.members-row-renew:hover {
+  opacity: 0.9;
+}
+
+.members-row-view {
+  border: 1px solid var(--color-border-default);
+  background: var(--color-neutral-0);
+  color: var(--color-text-secondary);
+}
+
+.members-row-view:hover {
+  background: var(--color-surface-page);
+}
+
+.members-card-actions {
+  margin-top: 0.6rem;
+}
+
+.members-card-actions .members-row-renew,
+.members-card-actions .members-row-view {
+  flex: 1;
+  min-height: 40px;
+}
+
+/* Mobile cards - default (< 768px) */
+
+.members-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.members-card:focus-visible {
+  outline: 2px solid var(--tint-ink);
+  outline-offset: 2px;
+}
+
+/* Phone card — design_handoff_flexhub_mobile/README.md §Members: white, radius 14, 1px stone border,
+   padding 14, gap 12; name 14.5/600, member # 12.5, "Plan · Phone" 13, expiry 12.5. Whole card taps to
+   Member Detail, so there are no action buttons here. */
+.members-card-compact {
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 14px;
+  border-color: var(--color-border-default);
+  box-shadow: none;
+}
+
+.members-card-compact:hover {
+  box-shadow: none;
+}
+
+.members-card-compact .members-card-top {
+  gap: 8px;
+}
+
+.members-card-compact .members-card-name {
+  font-size: 14.5px;
+}
+
+.members-card-compact .members-card-number {
+  margin: 2px 0 0;
+  font-size: 12.5px;
+  color: var(--color-text-secondary);
+}
+
+.members-card-compact .members-card-secondary {
+  margin: 4px 0 0;
+  font-size: 13px;
+}
+
+.members-card-expiry-line {
+  margin: 3px 0 0;
+  font-size: 12.5px;
+  color: var(--color-text-secondary);
+}
+
+.members-card {
+  display: flex;
+  gap: 0.75rem;
+  background: var(--color-neutral-0);
+  border: 1px solid var(--color-border-card);
+  border-radius: var(--radius-el);
+  padding: 1rem;
+  cursor: pointer;
+  box-shadow: 0 1px 3px var(--color-shadow);
+  transition: box-shadow 0.15s ease, transform 0.1s ease;
+}
+
+.members-card:hover {
+  box-shadow: 0 4px 12px var(--color-shadow);
+}
+
+.members-card:active {
+  transform: scale(0.99);
+}
+
+.members-card-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.members-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.members-card-name {
+  /* A flex child with white-space: nowrap won't shrink below its text unless told to (rules.md 16d) —
+     without this a long name pushes the status pill off the card instead of ellipsizing. */
+  min-width: 0;
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: var(--color-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.members-card-number {
+  color: var(--color-text-muted);
+  font-size: 0.78rem;
+  margin: 0.1rem 0 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.members-card-secondary {
+  color: var(--color-text-secondary);
+  font-size: 0.8rem;
+  margin: 0.15rem 0;
+}
+
+.members-card-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 0.35rem;
+}
+
+.members-card-expiry {
+  font-size: 0.78rem;
+}
+
+/* Desktop table - hidden until >= 768px */
+
+.members-table {
+  display: none;
+}
+
+@media (min-width: 768px) {
+  /* Below 768px, cards always render (a table doesn't fit a phone screen) regardless of
+     viewMode - the data-view gating below only takes effect once there's room for a table. */
+  .members-page[data-view='table'] .members-cards {
+    display: none;
+  }
+
+  .members-page[data-view='cards'] .members-table {
+    display: none;
+  }
+
+  /* Desktop Cards view is a grid, not the mobile single-column stack - a lone full-width
+     card per row would waste most of a desktop viewport's width. */
+  .members-page[data-view='cards'] .members-cards {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.75rem;
+  }
+
+  .members-controls-row {
+    align-items: center;
+  }
+
+  .members-page[data-view='table'] .members-table {
+    display: table;
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0 0.5rem;
+  }
+
+  .members-table th,
+  .members-table td {
+    text-align: left;
+    padding: 0.75rem 1rem;
+  }
+
+  .members-table th {
+    color: var(--color-text-muted);
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding-top: 0;
+  }
+
+  .members-table-number {
+    color: var(--color-text-secondary);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .members-sort-header {
+    background: none;
+    border: none;
+    padding: 0;
+    font: inherit;
+    text-transform: inherit;
+    letter-spacing: inherit;
+    color: inherit;
+    cursor: pointer;
+    min-height: 44px;
+    transition: color 0.15s ease;
+  }
+
+  .members-sort-header:hover {
+    color: var(--tint-ink);
+  }
+
+  .members-table-row {
+    cursor: pointer;
+    background: var(--color-neutral-0);
+    border: 1px solid var(--color-border-card);
+    transition: box-shadow 0.15s ease;
+  }
+
+  .members-table-row td:first-child {
+    border-top-left-radius: var(--radius-el);
+    border-bottom-left-radius: var(--radius-el);
+    border-left: 1px solid var(--color-border-card);
+  }
+
+  .members-table-row td:last-child {
+    border-top-right-radius: var(--radius-el);
+    border-bottom-right-radius: var(--radius-el);
+    border-right: 1px solid var(--color-border-card);
+  }
+
+  .members-table-row td {
+    border-top: 1px solid var(--color-border-card);
+    border-bottom: 1px solid var(--color-border-card);
+    font-size: 0.85rem;
+    color: var(--color-text-secondary);
+  }
+
+  .members-table-row:hover {
+    box-shadow: 0 2px 8px var(--color-shadow);
+  }
+
+  .members-table-name-cell {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    font-weight: 600;
+    font-size: 0.85rem;
+    color: var(--color-text-primary);
+  }
+
+  .members-table-actions-cell {
+    width: 148px;
+  }
+}
+
+@media (min-width: 1024px) {
+  .members-page[data-view='cards'] .members-cards {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
