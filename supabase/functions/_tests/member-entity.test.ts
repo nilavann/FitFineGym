@@ -59,37 +59,28 @@ function fakeClient(handlers: Record<string, (args: Record<string, unknown>) => 
   return { client, calls };
 }
 
-Deno.test('repository.softDelete: calls soft_delete_member with the caller and the id', async () => {
-  const { client, calls } = fakeClient({ soft_delete_member: () => ({}) });
-  await memberRepository(client).softDelete('caller-1', 7);
-  assertEquals(calls, [['soft_delete_member', { p_caller_id: 'caller-1', p_id: 7 }]]);
+Deno.test('repository.delete: calls delete_member with the caller and the id, and returns the photo paths', async () => {
+  const { client, calls } = fakeClient({ delete_member: () => ({ data: { photo_paths: ['7/a.jpg'] } }) });
+  assertEquals(await memberRepository(client).delete('caller-1', 7), { photo_paths: ['7/a.jpg'] });
+  assertEquals(calls, [['delete_member', { p_caller_id: 'caller-1', p_id: 7 }]]);
 });
 
-Deno.test('repository.softDelete: 409 is MEMBER_IN_USE, 404 is MEMBER_NOT_FOUND, 403 has no code', async () => {
+Deno.test('repository.delete: a missing result is read as no photos, not as a crash', async () => {
+  const empty = fakeClient({ delete_member: () => ({ data: null }) });
+  assertEquals(await memberRepository(empty.client).delete('c', 7), { photo_paths: [] });
+});
+
+Deno.test('repository.delete: 409 is MEMBER_IN_USE, 404 is MEMBER_NOT_FOUND, 403 has no code', async () => {
   for (const [pt, Err, code] of [['PT409', ConflictError, 'MEMBER_IN_USE'], ['PT404', NotFoundError, 'MEMBER_NOT_FOUND'], ['PT403', undefined, undefined]] as const) {
-    const { client } = fakeClient({ soft_delete_member: () => ({ error: { code: pt, message: 'm' } }) });
+    const { client } = fakeClient({ delete_member: () => ({ error: { code: pt, message: 'm' } }) });
     try {
-      await memberRepository(client).softDelete('c', 7);
+      await memberRepository(client).delete('c', 7);
       throw new Error('not thrown');
     } catch (e) {
       assertEquals((e as { code?: string }).code, code);
       if (Err) assert(e instanceof Err, String(e));
     }
   }
-});
-
-Deno.test('repository.purge: 409 is MEMBER_IS_SHARED_PARTNER; a missing result is read as empty, not as a crash', async () => {
-  const shared = fakeClient({ purge_member: () => ({ error: { code: 'PT409', message: 'shared' } }) });
-  try {
-    await memberRepository(shared.client).purge('c', 7);
-    throw new Error('not thrown');
-  } catch (e) {
-    assertEquals((e as { code?: string }).code, 'MEMBER_IS_SHARED_PARTNER');
-  }
-  const empty = fakeClient({ purge_member: () => ({ data: null }) });
-  assertEquals(await memberRepository(empty.client).purge('c', 7), { photo_paths: [], subscriptions: 0, items: 0 });
-  const full = fakeClient({ purge_member: () => ({ data: { photo_paths: ['7/a.jpg'], subscriptions: 2, items: 3 } }) });
-  assertEquals(await memberRepository(full.client).purge('c', 7), { photo_paths: ['7/a.jpg'], subscriptions: 2, items: 3 });
 });
 
 // photo storage -------------------------------------------------------------------------------------
@@ -141,14 +132,13 @@ Deno.test('photo storage: a list or remove failure is returned, never thrown', a
 
 // service -------------------------------------------------------------------------------------------
 
-function fakeDeps(o: { purge?: () => Promise<{ photo_paths: string[]; subscriptions: number; items: number }>; cleanup?: PhotoCleanup } = {}) {
+function fakeDeps(o: { delete?: () => Promise<{ photo_paths: string[] }>; cleanup?: PhotoCleanup } = {}) {
   const calls: string[] = [];
   const logged: unknown[][] = [];
   const repo: MemberRepository = {
     create: () => Promise.reject(new Error('create is not faked here')),
     setPhoto: () => Promise.reject(new Error('setPhoto is not faked here')),
-    softDelete: (c, id) => { calls.push(`softDelete ${c} ${id}`); return Promise.resolve(); },
-    purge: o.purge ?? ((() => { calls.push('purge'); return Promise.resolve({ photo_paths: ['5/a.jpg'], subscriptions: 1, items: 1 }); })),
+    delete: o.delete ?? ((c: string, id: number) => { calls.push(`delete ${c} ${id}`); return Promise.resolve({ photo_paths: ['5/a.jpg'] }); }),
   };
   const photos: MemberPhotoStorage = {
     upload: () => Promise.reject(new Error('upload is not faked here')),
@@ -158,30 +148,24 @@ function fakeDeps(o: { purge?: () => Promise<{ photo_paths: string[]; subscripti
   return { service: createMemberService({ repo, photos, log: (...a) => logged.push(a) }), calls, logged };
 }
 
-Deno.test('service.softDelete: delegates to the repository and answers { success: true }', async () => {
-  const { service, calls } = fakeDeps();
-  assertEquals(await service.softDelete('caller-1', 7), { success: true });
-  assertEquals(calls, ['softDelete caller-1 7']);
-});
-
-Deno.test('service.purge: removes the photos after the rows, passing the RPC\'s paths', async () => {
+Deno.test('service.delete: removes the photos after the row, passing the RPC\'s paths', async () => {
   const { service, calls, logged } = fakeDeps();
-  assertEquals(await service.purge('c', 5), { success: true, photos_removed: true });
-  assertEquals(calls, ['purge', 'removeAll 5 5/a.jpg']);
+  assertEquals(await service.delete('c', 5), { success: true, photos_removed: true });
+  assertEquals(calls, ['delete c 5', 'removeAll 5 5/a.jpg']);
   assertEquals(logged.length, 0);
 });
 
-Deno.test('service.purge: a photo failure is logged and reported, not an error', async () => {
+Deno.test('service.delete: a photo failure is logged and reported, not an error', async () => {
   const { service, logged } = fakeDeps({ cleanup: { removed: false, paths: ['5/a.jpg'], error: new Error('storage down') } });
-  assertEquals(await service.purge('c', 5), { success: true, photos_removed: false });
+  assertEquals(await service.delete('c', 5), { success: true, photos_removed: false });
   assertEquals(logged.length, 1);
-  assertEquals(logged[0].slice(0, 3), ['purge-member: member', 5, 'erased but photos were not (fully) removed:']);
+  assertEquals(logged[0].slice(0, 3), ['delete-member: member', 5, 'deleted but photos were not (fully) removed:']);
 });
 
-Deno.test('service.purge: when the purge is refused, no photo is touched', async () => {
-  const { service, calls } = fakeDeps({ purge: () => Promise.reject(new ConflictError('shared', 'MEMBER_IS_SHARED_PARTNER')) });
+Deno.test('service.delete: when the delete is refused, no photo is touched', async () => {
+  const { service, calls } = fakeDeps({ delete: () => Promise.reject(new ConflictError('in use', 'MEMBER_IN_USE')) });
   try {
-    await service.purge('c', 5);
+    await service.delete('c', 5);
     throw new Error('not thrown');
   } catch (e) {
     assert(e instanceof ConflictError);
@@ -436,8 +420,7 @@ function createDeps(o: { upload?: 'ok' | 'fail'; setPhoto?: 'ok' | 'fail' } = {}
   const repo: MemberRepository = {
     create: () => { calls.push('create'); return Promise.resolve(memberRow()); },
     setPhoto: () => { calls.push('setPhoto'); return o.setPhoto === 'fail' ? Promise.reject(new Error('db down')) : Promise.resolve(); },
-    softDelete: () => Promise.reject(new Error('unused')),
-    purge: () => Promise.reject(new Error('unused')),
+    delete: () => Promise.reject(new Error('unused')),
   };
   const photos: MemberPhotoStorage = {
     upload: () => { calls.push('upload'); return o.upload === 'fail' ? Promise.reject(new Error('storage down')) : Promise.resolve(paths); },
@@ -483,7 +466,7 @@ Deno.test('service.create: when the member is refused nothing is uploaded and th
   const service = createMemberService({
     repo: {
       create: () => Promise.reject(new ConflictError('phone in use', 'MEMBER_PHONE_IN_USE')),
-      setPhoto: () => Promise.reject(new Error('unused')), softDelete: () => Promise.reject(new Error('unused')), purge: () => Promise.reject(new Error('unused')),
+      setPhoto: () => Promise.reject(new Error('unused')), delete: () => Promise.reject(new Error('unused')),
     },
     photos: { upload: () => { calls.push('upload'); return Promise.reject(new Error('unused')); }, remove: () => Promise.reject(new Error('unused')), removeAll: () => Promise.reject(new Error('unused')) },
   });

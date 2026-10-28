@@ -9,7 +9,7 @@ enabled = true
 # Port to use for the API URL.
 port = 54321
 # Schemas to expose in your API. Tables, views and stored procedures in this schema will get API
-# endpoints. Only `fitfine` is exposed (phase-2-plan.md §1); `public` stays empty.
+# endpoints. Only `fitfine` is exposed; `public` stays empty.
 schemas = ["fitfine"]
 # Extra schemas to add to the search_path of every request.
 extra_search_path = ["extensions"]

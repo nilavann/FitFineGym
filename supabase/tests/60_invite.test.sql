@@ -33,7 +33,7 @@ begin
 
   -- A later metadata change (auth.updateUser({ data })) changes neither the profile nor the roles.
   update auth.users set raw_user_meta_data = jsonb_build_object(
-    'full_name', 'Hijacked', 'invited_by', t.uid('sysadmin'), 'role_ids', jsonb_build_array(t.role_id('admin'), t.role_id('system_admin')))
+    'full_name', 'Hijacked', 'invited_by', t.uid('admin3'), 'role_ids', jsonb_build_array(t.role_id('admin'), t.role_id('staff')))
   where id = v_id;
   perform t.eq('a later metadata update changes neither the profile nor the roles',
     (select p.full_name || '|' || string_agg(r.name, ',') from fitfine.profiles p
@@ -42,18 +42,16 @@ begin
     'New Staff|staff');
 end $$;
 
--- Role ids that aren't positive integers of an existing, non-deleted role are skipped.
+-- Role ids that aren't positive integers of an existing role are skipped.
 do $$
 declare
   v_id      uuid;
-  v_deleted smallint;
 begin
-  insert into fitfine.roles (name, deleted_at) values ('t_deleted_role', now()) returning id into v_deleted;
   v_id := t.new_user(2, 'mixed@fitfine.test', true, jsonb_build_object(
     'full_name', 'Mixed Roles', 'invited_by', t.uid('admin'),
-    'role_ids', jsonb_build_array(t.role_id('staff'), 32000, v_deleted, '1; drop table fitfine.members', '1.5', -1, 0,
+    'role_ids', jsonb_build_array(t.role_id('staff'), 32000, 31999, '1; drop table fitfine.members', '1.5', -1, 0,
                                   '123456', '99999999999999999999', jsonb_build_object('id', 1), null)));
-  perform t.eq('unknown, deleted, non-integer and oversized role ids are skipped; the valid one is kept',
+  perform t.eq('unknown, non-integer and oversized role ids are skipped; the valid one is kept',
     (select string_agg(r.name, ',') from fitfine.user_roles ur join fitfine.roles r on r.id = ur.role_id where ur.user_id = v_id),
     'staff');
   perform t.ok('members still exists', to_regclass('fitfine.members') is not null);
@@ -74,7 +72,7 @@ do $$
 declare v_id uuid;
 begin
   v_id := t.new_user(4, 'signup@fitfine.test', false, jsonb_build_object(
-    'full_name', 'Sign Up', 'invited_by', t.uid('sysadmin'), 'role_ids', jsonb_build_array(t.role_id('admin'))));
+    'full_name', 'Sign Up', 'invited_by', t.uid('admin3'), 'role_ids', jsonb_build_array(t.role_id('admin'))));
   perform t.ok('an uninvited insert creates no profile and no roles',
     not exists (select 1 from fitfine.profiles where id = v_id) and not exists (select 1 from fitfine.user_roles where user_id = v_id));
 end $$;

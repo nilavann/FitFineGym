@@ -66,19 +66,12 @@ Deno.test('create-subscription: an item for another member is 400', async () => 
   assertEquals(rpcCalls('create_subscription_with_items').length, 0);
 });
 
-Deno.test('create-subscription: a deleted or missing header or shared member is 404', async () => {
+Deno.test('create-subscription: a missing header or shared member is 404', async () => {
   setupCreate({ members: [6] });
   assertEquals((await create(checkout([GOOD_ITEM]))).status, 404);
   setupCreate({ members: [5] });
   assertEquals((await create(checkout([{ ...GOOD_ITEM, plan_id: 2, shared_member_id: 6 }]))).status, 404);
   assertEquals(rpcCalls('create_subscription_with_items').length, 0);
-});
-
-Deno.test('create-subscription: the member lookup excludes soft-deleted rows', async () => {
-  setupCreate();
-  await create(checkout([GOOD_ITEM]));
-  const q = queries().find((l) => l.name === 'members')!.q!;
-  assert(q.has('is', 'deleted_at', null));
 });
 
 Deno.test('create-subscription: a shared member needs a two-member membership plan', async () => {
@@ -170,10 +163,11 @@ Deno.test('update-subscription: request schema and error mapping', async () => {
 // delete-member / plan / branch / role ----------------------------------------------------------------
 
 for (const [fn, field, rpc, level] of [
-  ['delete-member', 'member_id', 'soft_delete_member', 'active'],
-  ['delete-plan', 'plan_id', 'soft_delete_plan', 'admin'],
-  ['delete-branch', 'branch_id', 'soft_delete_branch', 'admin'],
-  ['delete-role', 'role_id', 'soft_delete_role', 'admin'],
+  ['delete-member', 'member_id', 'delete_member', 'active'],
+  ['delete-subscription', 'subscription_id', 'delete_subscription', 'active'],
+  ['delete-plan', 'plan_id', 'delete_plan', 'admin'],
+  ['delete-branch', 'branch_id', 'delete_branch', 'admin'],
+  ['delete-role', 'role_id', 'delete_role', 'admin'],
 ] as const) {
   const run = async (b: unknown) => await call(await loadFunction(fn), { body: b });
 
@@ -182,7 +176,8 @@ for (const [fn, field, rpc, level] of [
     access(level);
     world.rpc[rpc] = () => ({ data: null });
     const r = await run({ [field]: 7 });
-    assertEquals([r.status, r.json], [200, { success: true }]);
+    // delete-member also removes the member's photos, and says whether that worked.
+    assertEquals([r.status, r.json], [200, fn === 'delete-member' ? { success: true, photos_removed: true } : { success: true }]);
     assertEquals(rpcCalls(rpc)[0].args, { p_caller_id: 'caller-1', p_id: 7 });
     assertEquals(queries().length, 0, 'no table query, so nothing is built from the id');
   });
@@ -207,29 +202,75 @@ for (const [fn, field, rpc, level] of [
   });
 }
 
-Deno.test('delete-member / purge-member: the response carries the member error code for 404 and 409', async () => {
-  for (const [fn, rpc, level, field, expected] of [
-    ['delete-member', 'soft_delete_member', 'active', 'member_id', { 409: 'MEMBER_IN_USE', 404: 'MEMBER_NOT_FOUND' }],
-    ['purge-member', 'purge_member', 'system_admin', 'member_id', { 409: 'MEMBER_IS_SHARED_PARTNER', 404: 'MEMBER_NOT_FOUND' }],
-  ] as const) {
-    for (const status of [409, 404] as const) {
-      world.reset();
-      access(level);
-      world.rpc[rpc] = () => refuse(String(status), 'm');
-      const r = await call(await loadFunction(fn), { body: { [field]: 7 } });
-      assertEquals([r.status, r.json], [status, { error: 'm', code: expected[status] }], `${fn} ${status}`);
-    }
+Deno.test('delete-member: the response carries the member error code for 404 and 409', async () => {
+  const expected = { 409: 'MEMBER_IN_USE', 404: 'MEMBER_NOT_FOUND' } as const;
+  for (const status of [409, 404] as const) {
     world.reset();
-    access(level);
-    world.rpc[rpc] = () => refuse('403', 'reserved');
-    assertEquals((await call(await loadFunction(fn), { body: { [field]: 7 } })).json, { error: 'reserved' }, `${fn} 403 has no code`);
+    access('active');
+    world.rpc['delete_member'] = () => refuse(String(status), 'm');
+    const r = await call(await loadFunction('delete-member'), { body: { member_id: 7 } });
+    assertEquals([r.status, r.json], [status, { error: 'm', code: expected[status] }], `delete-member ${status}`);
+  }
+  world.reset();
+  access('active');
+  world.rpc['delete_member'] = () => refuse('403', 'reserved');
+  assertEquals((await call(await loadFunction('delete-member'), { body: { member_id: 7 } })).json, { error: 'reserved' }, 'delete-member 403 has no code');
+});
+
+// delete-member removes the photos too ----------------------------------------------------------------
+
+const delMember = async (b: unknown) => await call(await loadFunction('delete-member'), { body: b });
+function setupDeleteMember(o: { paths?: string[]; listed?: string[]; remove?: () => unknown; removeError?: boolean } = {}) {
+  world.reset();
+  access('active');
+  world.rpc['delete_member'] = (o.remove as never) ?? (() => ({ data: { photo_paths: o.paths ?? ['5/original-1.jpg', '5/thumbnail-1.jpg'] } }));
+  world.storageList = () => (o.listed ?? []).map((name) => ({ name }));
+  if (o.removeError) world.storageRemove = () => ({ error: { message: 'storage down' } });
+}
+const removed = () => world.log.filter((l) => l.name === 'member-photos.remove').map((l) => l.args);
+
+Deno.test('delete-member: deletes, then removes the member\'s photos and everything in their folder', async () => {
+  setupDeleteMember({ listed: ['original-0.jpg', 'original-1.jpg'] });
+  const r = await delMember({ member_id: 5 });
+  assertEquals([r.status, r.json], [200, { success: true, photos_removed: true }]);
+  assertEquals(rpcCalls('delete_member')[0].args, { p_caller_id: 'caller-1', p_id: 5 });
+  assertEquals((removed()[0] as string[]).sort(), ['5/original-0.jpg', '5/original-1.jpg', '5/thumbnail-1.jpg']);
+});
+
+Deno.test('delete-member: an object outside <member_id>/ is left alone even when delete_member returns it', async () => {
+  setupDeleteMember({ paths: ['5/original-1.jpg', '6/original-9.jpg', '../7/original-1.jpg', '50/original-1.jpg', 'x.jpg'] });
+  await delMember({ member_id: 5 });
+  assertEquals(removed(), [['5/original-1.jpg']]);
+});
+
+Deno.test('delete-member: a storage failure is reported, never an error response', async () => {
+  setupDeleteMember({ removeError: true });
+  const realError = console.error;
+  console.error = () => {};
+  const r = await delMember({ member_id: 5 });
+  console.error = realError;
+  assertEquals([r.status, r.json], [200, { success: true, photos_removed: false }]);
+});
+
+Deno.test('delete-member: nothing to remove calls no remove', async () => {
+  setupDeleteMember({ paths: [] });
+  await delMember({ member_id: 5 });
+  assertEquals(removed().length, 0);
+});
+
+Deno.test('delete-member: 404 missing and 409 in use keep their message; no storage call', async () => {
+  for (const [status, message] of [['404', 'Member not found'], ['409', 'Cannot delete — used by 2 subscription/add-on record(s)']]) {
+    setupDeleteMember({ remove: () => refuse(status, message) });
+    const r = await delMember({ member_id: 5 });
+    assertEquals([r.status, r.json?.error], [Number(status), message]);
+    assertEquals(world.log.filter((l) => l.kind === 'storage').length, 0);
   }
 });
 
 // invite-user -------------------------------------------------------------------------------------
 
 const invite = async (b: unknown) => await call(await loadFunction('invite-user'), { body: b });
-function setupInvite(level: 'admin' | 'system_admin' = 'admin', roleRows: { id: number; name: string }[] = [{ id: 2, name: 'staff' }]) {
+function setupInvite(level: 'admin' = 'admin', roleRows: { id: number; name: string }[] = [{ id: 2, name: 'staff' }]) {
   world.reset();
   access(level);
   world.tables['roles'] = () => ({ data: roleRows });
@@ -246,21 +287,21 @@ Deno.test('invite-user: the roles travel in the invite metadata; no separate rol
   assertEquals(queries().map((q) => q.name), ['roles']);
 });
 
-Deno.test('invite-user: roles must exist and be active', async () => {
+Deno.test('invite-user: roles must exist', async () => {
   setupInvite('admin', []);
   const r = await invite(INVITE);
   assertEquals([r.status, r.json?.error], [400, 'One or more roles do not exist or are not active']);
-  assertEquals(world.log.some((l) => l.kind === 'query' && l.q!.has('is', 'deleted_at', null)), true);
 });
 
-Deno.test('invite-user: system_admin only from a system admin and only together with admin', async () => {
-  const both = [{ id: 1, name: 'admin' }, { id: 3, name: 'system_admin' }];
-  setupInvite('admin', both);
-  assertEquals((await invite({ ...INVITE, roles: ['admin', 'system_admin'] })).status, 403);
-  setupInvite('system_admin', [{ id: 3, name: 'system_admin' }]);
-  assertEquals((await invite({ ...INVITE, roles: ['system_admin'] })).status, 400);
-  setupInvite('system_admin', both);
-  assertEquals((await invite({ ...INVITE, roles: ['admin', 'system_admin'] })).status, 201);
+Deno.test('invite-user: an admin can invite with the admin role', async () => {
+  setupInvite('admin', [{ id: 1, name: 'admin' }]);
+  assertEquals((await invite({ ...INVITE, roles: ['admin'] })).status, 201);
+});
+
+Deno.test('invite-user: system_admin no longer exists, so asking for it is an unknown role (400)', async () => {
+  setupInvite('admin', []);
+  const r = await invite({ ...INVITE, roles: ['system_admin'] });
+  assertEquals([r.status, r.json?.error], [400, 'One or more roles do not exist or are not active']);
 });
 
 Deno.test('invite-user: an email already registered is 409; other invite failures are the generic 500', async () => {
@@ -286,11 +327,11 @@ Deno.test('invite-user: request schema', async () => {
 
 // list-users --------------------------------------------------------------------------------------
 
-Deno.test('list-users: joins profiles with emails, sorts by name, hides deleted users unless asked', async () => {
+Deno.test('list-users: joins profiles with emails and sorts by name; a profile without an email is left out', async () => {
   const profiles = [
-    { id: 'u-2', full_name: 'Zed', roles: ['staff'], is_active: true, deleted_at: null },
-    { id: 'u-1', full_name: 'Amy', roles: ['admin'], is_active: false, deleted_at: null },
-    { id: 'u-3', full_name: 'Noemail', roles: [], is_active: true, deleted_at: null },
+    { id: 'u-2', full_name: 'Zed', roles: ['staff'], is_active: true },
+    { id: 'u-1', full_name: 'Amy', roles: ['admin'], is_active: false },
+    { id: 'u-3', full_name: 'Noemail', roles: [], is_active: true },
   ];
   world.reset();
   access('admin');
@@ -298,21 +339,14 @@ Deno.test('list-users: joins profiles with emails, sorts by name, hides deleted 
   world.listUsersPages = [[{ id: 'u-2', email: 'z@x.test' }, { id: 'u-1', email: 'a@x.test' }, { id: 'u-3', email: null }]];
   const r = await call(await loadFunction('list-users'), { body: {} });
   assertEquals((r.json?.users as { email: string }[]).map((u) => u.email), ['a@x.test', 'z@x.test']);
-  assert(queries()[0].q!.has('is', 'deleted_at', null));
-
-  world.reset();
-  access('admin');
-  world.tables['profiles_with_roles'] = () => ({ data: profiles });
-  world.listUsersPages = [[]];
-  await call(await loadFunction('list-users'), { body: { include_deleted: true } });
-  assert(!queries()[0].q!.has('is', 'deleted_at', null));
+  assertEquals((r.json?.users as { is_active: boolean }[]).map((u) => u.is_active), [false, true], 'deactivated users are listed');
 });
 
 Deno.test('list-users: reads every page of auth users', async () => {
   world.reset();
   access('admin');
   world.tables['profiles_with_roles'] = () => ({
-    data: [{ id: 'u-250', full_name: 'Late', roles: [], is_active: true, deleted_at: null }],
+    data: [{ id: 'u-250', full_name: 'Late', roles: [], is_active: true }],
   });
   world.listUsersPages = [
     Array.from({ length: 200 }, (_, i) => ({ id: `u-${i}`, email: `${i}@x.test` })),
@@ -322,10 +356,10 @@ Deno.test('list-users: reads every page of auth users', async () => {
   assertEquals((r.json?.users as unknown[]).length, 1);
 });
 
-Deno.test('list-users: include_deleted must be a boolean', async () => {
+Deno.test('list-users: takes no fields (include_deleted is gone: users are never deleted)', async () => {
   world.reset();
   access('admin');
-  assertEquals((await call(await loadFunction('list-users'), { body: { include_deleted: 'yes' } })).status, 400);
+  assertEquals((await call(await loadFunction('list-users'), { body: { include_deleted: true } })).status, 400);
 });
 
 // update-user -------------------------------------------------------------------------------------
@@ -337,7 +371,7 @@ function setupUpdateUser(o: { roles?: { id: number; name: string }[]; updated?: 
   access('admin', 2);
   world.tables['roles'] = () => ({ data: o.roles ?? [{ id: 2, name: 'staff' }] });
   world.tables['profiles_with_roles'] = () => ({ data: 'updated' in o ? o.updated : { id: TARGET, full_name: 'X', roles: ['staff'], is_active: true } });
-  for (const rpc of ['update_profile_fields', 'soft_delete_profile', 'restore_profile', 'replace_user_roles']) {
+  for (const rpc of ['update_profile_fields', 'replace_user_roles']) {
     world.rpc[rpc] = () => o.errors?.[rpc] ?? { data: null };
   }
 }
@@ -357,21 +391,19 @@ Deno.test('update-user: roles go to replace_user_roles as ids', async () => {
   assertEquals(rpcCalls('update_profile_fields').length, 0);
 });
 
-Deno.test('update-user: delete and restore', async () => {
+Deno.test('update-user: users are never deleted or restored, only deactivated (delete and restore are not fields)', async () => {
   setupUpdateUser();
-  assertEquals((await upd({ user_id: TARGET, delete: true })).json, { success: true });
-  assertEquals(rpcCalls('soft_delete_profile')[0].args, { p_caller_id: 'caller-1', p_target_user_id: TARGET });
-  assertEquals((await upd({ user_id: TARGET, restore: true })).json, { success: true });
-  assertEquals(rpcCalls('restore_profile').length, 1);
+  assertEquals((await upd({ user_id: TARGET, delete: true })).status, 400);
+  assertEquals((await upd({ user_id: TARGET, restore: true })).status, 400);
+  assertEquals(rpcCalls('update_profile_fields').length + rpcCalls('replace_user_roles').length, 0);
 });
 
-Deno.test('update-user: no one changes their own roles, active status or deletes themselves', async () => {
+Deno.test('update-user: no one changes their own roles or active status', async () => {
   const self = 'caller-1-uuid';
   world.reset();
   access('admin');
   world.user = { id: 'a0000000-0000-4000-8000-0000000000aa' };
   const me = 'a0000000-0000-4000-8000-0000000000aa';
-  assertEquals((await upd({ user_id: me, delete: true })).status, 403);
   assertEquals((await upd({ user_id: me, roles: ['staff'] })).status, 403);
   assertEquals((await upd({ user_id: me, is_active: false })).status, 403);
   assertEquals(dataCalls().length, 0);
@@ -390,16 +422,16 @@ Deno.test('update-user: the last active admin is refused up front, and by the da
   assertEquals((await upd({ user_id: TARGET, is_active: false })).json?.error, 'Cannot deactivate — this is the last active admin.');
   assertEquals(rpcCalls('replace_user_roles').length + rpcCalls('update_profile_fields').length, 0);
 
-  setupUpdateUser({ errors: { soft_delete_profile: refuse('409', 'Cannot delete — this is the last active admin.') } });
-  const r = await upd({ user_id: TARGET, delete: true });
-  assertEquals([r.status, r.json?.error], [409, 'Cannot delete — this is the last active admin.']);
+  setupUpdateUser({ errors: { update_profile_fields: refuse('409', 'Cannot deactivate — this is the last active admin.') } });
+  const r = await upd({ user_id: TARGET, is_active: false });
+  assertEquals([r.status, r.json?.error], [409, 'Cannot deactivate — this is the last active admin.']);
 });
 
-Deno.test('update-user: system_admin rules from the database keep their status', async () => {
-  setupUpdateUser({ errors: { replace_user_roles: refuse('403', 'Only a system admin can grant or remove the system_admin role.') } });
-  assertEquals((await upd({ user_id: TARGET, roles: ['staff'] })).status, 403);
-  setupUpdateUser({ errors: { replace_user_roles: refuse('400', 'The system_admin role can only be held together with admin.') } });
+Deno.test('update-user: a refusal from replace_user_roles keeps its status', async () => {
+  setupUpdateUser({ errors: { replace_user_roles: refuse('400', 'One or more roles do not exist or are not active') } });
   assertEquals((await upd({ user_id: TARGET, roles: ['staff'] })).status, 400);
+  setupUpdateUser({ errors: { replace_user_roles: refuse('409', 'Cannot remove — this is the last active admin.') } });
+  assertEquals((await upd({ user_id: TARGET, roles: ['staff'] })).status, 409);
 });
 
 Deno.test('update-user: unknown roles, nothing to update and a missing user', async () => {
@@ -416,64 +448,6 @@ Deno.test('update-user: request schema', async () => {
     setupUpdateUser();
     assertEquals((await upd(b)).status, 400, JSON.stringify(b).slice(0, 60));
     assertEquals(dataCalls().length, 0);
-  }
-});
-
-// purge-member --------------------------------------------------------------------------------------
-
-const purge = async (b: unknown) => await call(await loadFunction('purge-member'), { body: b });
-function setupPurge(o: { paths?: string[]; listed?: string[]; purge?: () => unknown; removeError?: boolean } = {}) {
-  world.reset();
-  access('system_admin');
-  world.rpc['purge_member'] = (o.purge as never) ?? (() => ({ data: { photo_paths: o.paths ?? ['5/original-1.jpg', '5/thumbnail-1.jpg'], subscriptions: 1, items: 2 } }));
-  world.storageList = () => (o.listed ?? []).map((name) => ({ name }));
-  if (o.removeError) world.storageRemove = () => ({ error: { message: 'storage down' } });
-}
-const removed = () => world.log.filter((l) => l.name === 'member-photos.remove').map((l) => l.args);
-
-Deno.test('purge-member: purges, then removes the member\'s photos and everything in their folder', async () => {
-  setupPurge({ listed: ['original-0.jpg', 'original-1.jpg'] });
-  const r = await purge({ member_id: 5 });
-  assertEquals([r.status, r.json], [200, { success: true, photos_removed: true }]);
-  assertEquals(rpcCalls('purge_member')[0].args, { p_caller_id: 'caller-1', p_member_id: 5 });
-  assertEquals((removed()[0] as string[]).sort(), ['5/original-0.jpg', '5/original-1.jpg', '5/thumbnail-1.jpg']);
-});
-
-Deno.test('purge-member: an object outside <member_id>/ is left alone even when purge_member returns it', async () => {
-  setupPurge({ paths: ['5/original-1.jpg', '6/original-9.jpg', '../7/original-1.jpg', '50/original-1.jpg', 'x.jpg'] });
-  await purge({ member_id: 5 });
-  assertEquals(removed(), [['5/original-1.jpg']]);
-});
-
-Deno.test('purge-member: a storage failure is reported, never an error response', async () => {
-  setupPurge({ removeError: true });
-  const realError = console.error;
-  console.error = () => {};
-  const r = await purge({ member_id: 5 });
-  console.error = realError;
-  assertEquals([r.status, r.json], [200, { success: true, photos_removed: false }]);
-});
-
-Deno.test('purge-member: nothing to remove calls no remove', async () => {
-  setupPurge({ paths: [] });
-  await purge({ member_id: 5 });
-  assertEquals(removed().length, 0);
-});
-
-Deno.test('purge-member: 404 missing and 409 shared member keep their message; no storage call', async () => {
-  for (const [status, message] of [['404', 'Member 5 not found'], ['409', 'Cannot purge — shared'], ['403', 'System admin access required']]) {
-    setupPurge({ purge: () => refuse(status, message) });
-    const r = await purge({ member_id: 5 });
-    assertEquals([r.status, r.json?.error], [Number(status), message]);
-    assertEquals(world.log.filter((l) => l.kind === 'storage').length, 0);
-  }
-});
-
-Deno.test('purge-member: member_id must be a positive integer', async () => {
-  for (const b of [{}, { member_id: 0 }, { member_id: -3 }, { member_id: '5' }, { member_id: 1.5 }, { member_id: null }]) {
-    setupPurge();
-    assertEquals((await purge(b)).status, 400, JSON.stringify(b));
-    assertEquals(rpcCalls('purge_member').length, 0);
   }
 });
 

@@ -5,36 +5,22 @@ begin;
 \ir framework.sql
 select t.seed();
 
--- access_of: (is_active, is_admin, is_system_admin) --------------------------------------------
+-- access_of: (is_active, is_admin) --------------------------------------------
 select t.eq('access_of: an auth user with no profile has no access',
-  fitfine_private.access_of(t.uid('nop'))::text, '(f,f,f)');
+  fitfine_private.access_of(t.uid('nop'))::text, '(f,f)');
 select t.eq('access_of: an inactive user has no access',
-  fitfine_private.access_of(t.uid('inactive'))::text, '(f,f,f)');
-select t.eq('access_of: a deleted user has no access',
-  fitfine_private.access_of(t.uid('deleted'))::text, '(f,f,f)');
+  fitfine_private.access_of(t.uid('inactive'))::text, '(f,f)');
 select t.eq('access_of: a user without a role has no access',
-  fitfine_private.access_of(t.uid('norole'))::text, '(f,f,f)');
+  fitfine_private.access_of(t.uid('norole'))::text, '(f,f)');
 select t.eq('access_of: staff is active only',
-  fitfine_private.access_of(t.uid('staff'))::text, '(t,f,f)');
+  fitfine_private.access_of(t.uid('staff'))::text, '(t,f)');
 select t.eq('access_of: an admin is active and admin',
-  fitfine_private.access_of(t.uid('admin'))::text, '(t,t,f)');
-select t.eq('access_of: a system admin is all three',
-  fitfine_private.access_of(t.uid('sysadmin'))::text, '(t,t,t)');
+  fitfine_private.access_of(t.uid('admin'))::text, '(t,t)');
 select t.eq('access_of: an unknown id has no access',
-  fitfine_private.access_of('00000000-0000-0000-0000-000000000000')::text, '(f,f,f)');
+  fitfine_private.access_of('00000000-0000-0000-0000-000000000000')::text, '(f,f)');
 select t.eq('access_of: NULL has no access',
-  coalesce(fitfine_private.access_of(null)::text, '(f,f,f)'), '(f,f,f)');
+  coalesce(fitfine_private.access_of(null)::text, '(f,f)'), '(f,f)');
 
--- A role that is soft-deleted no longer counts.
-update fitfine.roles set deleted_at = now() where id = t.role_id('staff');
-select t.eq('access_of: a user whose only role is deleted has no access',
-  fitfine_private.access_of(t.uid('staff'))::text, '(f,f,f)');
-update fitfine.roles set deleted_at = null where name = 'staff' and deleted_at is not null;
--- system_admin without admin is not a system admin.
-delete from fitfine.user_roles where user_id = t.uid('sysadmin') and role_id = t.role_id('admin');
-select t.eq('access_of: system_admin without admin is neither admin nor system admin',
-  fitfine_private.access_of(t.uid('sysadmin'))::text, '(t,f,f)');
-insert into fitfine.user_roles (user_id, role_id) values (t.uid('sysadmin'), t.role_id('admin'));
 
 -- The RLS helpers read the caller ------------------------------------------------------------
 select t.eq('is_active_user() is true for staff',
@@ -61,7 +47,7 @@ select t.raises('act_as refuses NULL', 'postgres', null, 'select fitfine_private
 select t.ok('every trigger on fitfine and on auth.users runs a fitfine_private function',
   (select count(*) from pg_trigger tg join pg_proc p on p.oid = tg.tgfoid
    where not tg.tgisinternal and p.pronamespace = 'fitfine_private'::regnamespace
-     and tg.tgrelid in (select oid from pg_class where relnamespace in ('fitfine'::regnamespace, 'auth'::regnamespace))) = 26
+     and tg.tgrelid in (select oid from pg_class where relnamespace in ('fitfine'::regnamespace, 'auth'::regnamespace))) = 19
   and not exists (select 1 from pg_proc where pronamespace = 'fitfine'::regnamespace and prorettype = 'trigger'::regtype));
 
 do $$
@@ -97,10 +83,12 @@ begin
     (select member_number || '|' || branch_id from fitfine.members where id = v_id), v_number || '|' || t.branch('TA'));
 end $$;
 
-select t.raises('prevent_hard_delete: the owner cannot delete a member either', 'postgres', null,
-  'delete from fitfine.members where phone = ''5550000002''', 'P0001', '%Hard delete is not allowed on table members%');
-select t.raises('protect_system_admin_role: system_admin cannot be renamed', 'postgres', null,
-  'update fitfine.roles set name = ''root'' where name = ''system_admin''', 'P0001', '%reserved%');
+select t.raises('prevent_hard_delete: the owner cannot delete a user either', 'postgres', null,
+  format('delete from fitfine.profiles where id = %L', t.uid('staff2')), 'P0001', '%Hard delete is not allowed on table profiles%');
+select t.ok('there is no system_admin role, no is_system_admin flag and no protect_system_admin_role',
+  not exists (select 1 from fitfine.roles where name = 'system_admin')
+  and not exists (select 1 from pg_attribute where attrelid = (select typrelid from pg_type where oid = 'fitfine_private.access'::regtype) and attname = 'is_system_admin' and not attisdropped)
+  and to_regprocedure('fitfine_private.protect_system_admin_role()') is null);
 
 -- Every function in both schemas has search_path = '' (invoker ones too) ------------------------
 select t.ok('every function in fitfine and fitfine_private has search_path = ''''',

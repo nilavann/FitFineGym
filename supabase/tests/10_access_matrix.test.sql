@@ -20,43 +20,39 @@ do $$
 declare
   ta    bigint := t.branch('TA');
   tab   bigint := t.branch('TAB');
-  m1    bigint := (select id from fitfine.members where phone = '5550000001' and deleted_at is null);
+  m1    bigint := (select id from fitfine.members where phone = '5550000001');
   s1    bigint := (select id from fitfine.subscriptions where member_id = m1);
   i1    bigint := (select id from fitfine.subscription_items where subscription_id = s1);
   staff_role smallint := t.role_id('staff');
   locker bigint := t.plan('T Locker');
   -- role groups
-  active  text[] := array['staff', 'admin', 'sysadmin'];
-  admins  text[] := array['admin', 'sysadmin'];
-  signed  text[] := array['nop', 'inactive', 'norole', 'deleted', 'staff', 'admin', 'sysadmin'];
+  active  text[] := array['staff', 'admin', 'admin3'];
+  admins  text[] := array['admin', 'admin3'];
+  signed  text[] := array['nop', 'inactive', 'norole', 'staff', 'admin', 'admin3'];
 begin
   insert into t.cells values
   -- profiles: a deactivated user, or one without a role, still reads their own row
   ('profiles', 'select', 'select 1 from fitfine.profiles', array['inactive', 'norole', 'service_role'] || active),
   ('profiles', 'insert', format('insert into fitfine.profiles (id, full_name) values (%L, %L)', t.uid('nop'), 'New'), array['service_role']),
   ('profiles', 'update (full_name), another user', format('update fitfine.profiles set full_name = %L where id = %L', 'Renamed', t.uid('staff2')), array['service_role'] || admins),
-  ('profiles', 'update (deleted_at)', format('update fitfine.profiles set deleted_at = now() where id = %L', t.uid('staff2')), array['service_role']),
   ('profiles', 'delete', format('delete from fitfine.profiles where id = %L', t.uid('staff2')), array[]::text[]),
   ('profiles', 'truncate', 'truncate fitfine.profiles', array[]::text[]),
 
   ('branches', 'select', 'select 1 from fitfine.branches', array['service_role'] || active),
   ('branches', 'insert', 'insert into fitfine.branches (name, code) values (''New'', ''TNEW'')', array['service_role'] || admins),
   ('branches', 'update (name)', format('update fitfine.branches set name = %L where id = %s', 'Renamed', ta), array['service_role'] || admins),
-  ('branches', 'update (deleted_at)', format('update fitfine.branches set deleted_at = now() where id = %s', tab), array['service_role']),
   ('branches', 'delete', format('delete from fitfine.branches where id = %s', tab), array[]::text[]),
   ('branches', 'truncate', 'truncate fitfine.branches', array[]::text[]),
 
   ('plans', 'select', 'select 1 from fitfine.plans', array['service_role'] || active),
   ('plans', 'insert', 'insert into fitfine.plans (name, category, duration_days, price) values (''T New'', ''addon'', 30, 10)', array['service_role'] || admins),
   ('plans', 'update (price)', format('update fitfine.plans set price = 1 where id = %s', locker), array['service_role'] || admins),
-  ('plans', 'update (deleted_at)', format('update fitfine.plans set deleted_at = now() where id = %s', locker), array['service_role']),
   ('plans', 'delete', format('delete from fitfine.plans where id = %s', locker), array[]::text[]),
   ('plans', 'truncate', 'truncate fitfine.plans', array[]::text[]),
 
   ('roles', 'select', 'select 1 from fitfine.roles', array['service_role'] || active),
   ('roles', 'insert', 'insert into fitfine.roles (name) values (''t_new_role'')', array['service_role'] || admins),
   ('roles', 'update (description)', format('update fitfine.roles set description = %L where id = %s', 'x', staff_role), array['service_role'] || admins),
-  ('roles', 'update (deleted_at)', format('update fitfine.roles set deleted_at = now() where id = %s', staff_role), array['service_role']),
   ('roles', 'delete', format('delete from fitfine.roles where id = %s', staff_role), array[]::text[]),
   ('roles', 'truncate', 'truncate fitfine.roles', array[]::text[]),
 
@@ -74,7 +70,6 @@ begin
   ('members', 'update (name)', format('update fitfine.members set name = %L where id = %s', 'Renamed', m1), array['service_role'] || active),
   ('members', 'update (branch_id)', format('update fitfine.members set branch_id = %s where id = %s', tab, m1), array['service_role']),
   ('members', 'update (member_number)', format('update fitfine.members set member_number = %L where id = %s', 'X-1', m1), array['service_role']),
-  ('members', 'update (deleted_at)', format('update fitfine.members set deleted_at = now() where id = %s', m1), array['service_role']),
   ('members', 'delete', format('delete from fitfine.members where id = %s', m1), array[]::text[]),
   ('members', 'truncate', 'truncate fitfine.members', array[]::text[]),
 
@@ -124,14 +119,12 @@ begin
   ('create_subscription_with_items', 'execute', format('select fitfine.create_subscription_with_items(%L, -1, %L, null, %L)', t.uid('staff'), 'Cash', '[]'), array['service_role']),
   ('update_subscription_header', 'execute', format('select fitfine.update_subscription_header(%L, -1, null, null, false)', t.uid('staff')), array['service_role']),
   ('update_profile_fields', 'execute', format('select fitfine.update_profile_fields(%L, %L, null, null)', t.uid('admin'), t.uid('staff2')), array['service_role']),
-  ('soft_delete_profile', 'execute', format('select fitfine.soft_delete_profile(%L, %L)', t.uid('admin'), t.uid('nop')), array['service_role']),
-  ('restore_profile', 'execute', format('select fitfine.restore_profile(%L, %L)', t.uid('admin'), t.uid('nop')), array['service_role']),
   ('replace_user_roles', 'execute', format('select fitfine.replace_user_roles(%L, %L, %L)', t.uid('admin'), t.uid('nop'), '{}'), array['service_role']),
-  ('purge_member', 'execute', format('select fitfine.purge_member(%L, -1)', t.uid('sysadmin')), array['service_role']),
-  ('soft_delete_member', 'execute', format('select fitfine.soft_delete_member(%L, -1)', t.uid('staff')), array['service_role']),
-  ('soft_delete_plan', 'execute', format('select fitfine.soft_delete_plan(%L, -1)', t.uid('admin')), array['service_role']),
-  ('soft_delete_branch', 'execute', format('select fitfine.soft_delete_branch(%L, -1)', t.uid('admin')), array['service_role']),
-  ('soft_delete_role', 'execute', format('select fitfine.soft_delete_role(%L, -1)', t.uid('admin')), array['service_role']),
+  ('delete_member', 'execute', format('select fitfine.delete_member(%L, -1)', t.uid('staff')), array['service_role']),
+  ('delete_subscription', 'execute', format('select fitfine.delete_subscription(%L, -1)', t.uid('staff')), array['service_role']),
+  ('delete_plan', 'execute', format('select fitfine.delete_plan(%L, -1)', t.uid('admin')), array['service_role']),
+  ('delete_branch', 'execute', format('select fitfine.delete_branch(%L, -1)', t.uid('admin')), array['service_role']),
+  ('delete_role', 'execute', format('select fitfine.delete_role(%L, -1)', t.uid('admin')), array['service_role']),
   ('set_member_number_sequence', 'execute', format('select fitfine.set_member_number_sequence(%L, -1, 1)', t.uid('admin')), array['service_role']),
 
   -- fitfine_private: the two RLS helpers for signed-in users, nothing else for anyone
@@ -145,7 +138,6 @@ begin
   ('fitfine_private.generate_member_number', 'execute', 'select fitfine_private.generate_member_number()', array[]::text[]),
   ('fitfine_private.audit_row_changes', 'execute', 'select fitfine_private.audit_row_changes()', array[]::text[]),
   ('fitfine_private.prevent_hard_delete', 'execute', 'select fitfine_private.prevent_hard_delete()', array[]::text[]),
-  ('fitfine_private.protect_system_admin_role', 'execute', 'select fitfine_private.protect_system_admin_role()', array[]::text[]),
   ('fitfine_private.handle_new_auth_user', 'execute', 'select fitfine_private.handle_new_auth_user()', array[]::text[]);
 end $$;
 
@@ -173,7 +165,7 @@ declare
   v_cells integer;
   v_bad   integer;
 begin
-  for r in select * from unnest(array['anon', 'nop', 'inactive', 'norole', 'deleted', 'staff', 'admin', 'sysadmin', 'service_role']) as who
+  for r in select * from unnest(array['anon', 'nop', 'inactive', 'norole', 'staff', 'admin', 'admin3', 'service_role']) as who
   loop
     v_cells := 0; v_bad := 0;
     v_role := case when r.who in ('anon', 'service_role') then r.who else 'authenticated' end;

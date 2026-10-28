@@ -1,5 +1,5 @@
--- One regression test per production gap F1-F9. Each holds on
--- fitfine and fails on the source project's grants as they were read on 2026-10-26.
+-- One regression test per access gap found in the earlier public-schema backend (F1-F9), so none
+-- comes back.
 \set QUIET on
 begin;
 \ir framework.sql
@@ -23,9 +23,11 @@ select t.ok('F1 all three views are security_invoker',
 select t.raises('F2 a signed-in user cannot call create_subscription_with_items', 'authenticated', t.uid('staff'),
   format('select fitfine.create_subscription_with_items(%L, 1, %L, null, %L)', t.uid('admin'), 'Cash', '[]'), '42501');
 select t.raises('F2 a signed-in admin cannot call update_profile_fields', 'authenticated', t.uid('admin'),
-  format('select fitfine.update_profile_fields(%L, %L, null, false)', t.uid('admin'), t.uid('sysadmin')), '42501');
-select t.raises('F2 anon cannot call soft_delete_profile', 'anon', null,
-  format('select fitfine.soft_delete_profile(%L, %L)', t.uid('admin'), t.uid('sysadmin')), '42501');
+  format('select fitfine.update_profile_fields(%L, %L, null, false)', t.uid('admin'), t.uid('admin3')), '42501');
+select t.raises('F2 anon cannot call delete_member', 'anon', null,
+  format('select fitfine.delete_member(%L, 1)', t.uid('staff')), '42501');
+select t.raises('F2 a signed-in user cannot call delete_subscription', 'authenticated', t.uid('staff'),
+  format('select fitfine.delete_subscription(%L, 1)', t.uid('staff')), '42501');
 
 -- F3: every new auth user, invited or not, became an active staff member.
 insert into auth.users (id, email) values ('f17f1e00-0000-4000-8000-0000000000f3', 'signup@fitfine.test');
@@ -47,13 +49,13 @@ select t.ok('F4 nobody but the owner holds DELETE, TRUNCATE, REFERENCES or TRIGG
     where g.table_schema = 'fitfine' and g.grantee <> 'postgres'
       and g.privilege_type in ('DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER')));
 
--- F5: a direct update could write any column, deleted_at and deleted_by included.
-select t.raises('F5 staff cannot soft-delete a member directly', 'authenticated', t.uid('staff'),
-  'update fitfine.members set deleted_at = now() where true', '42501');
-select t.raises('F5 staff cannot write deleted_by', 'authenticated', t.uid('staff'),
-  format('update fitfine.members set deleted_by = %L where true', t.uid('staff')), '42501');
-select t.raises('F5 an admin cannot soft-delete a plan directly', 'authenticated', t.uid('admin'),
-  'update fitfine.plans set deleted_at = now() where true', '42501');
+-- F5: a direct write could reach any column, and a direct delete skipped the usage guards.
+select t.raises('F5 staff cannot delete a member directly', 'authenticated', t.uid('staff'),
+  'delete from fitfine.members where true', '42501');
+select t.raises('F5 staff cannot write member_number', 'authenticated', t.uid('staff'),
+  'update fitfine.members set member_number = ''X-1'' where true', '42501');
+select t.raises('F5 an admin cannot delete a plan directly', 'authenticated', t.uid('admin'),
+  'delete from fitfine.plans where true', '42501');
 
 -- F6: the policies applied to anon and re-evaluated the helper per row.
 select t.ok('F6 every policy is TO authenticated only',

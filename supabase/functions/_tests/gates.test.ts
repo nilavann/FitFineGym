@@ -3,7 +3,7 @@
 // refusal happens before any data is touched.
 import { access, assertEquals, call, dataCalls, loadFunction, world } from './harness.ts';
 
-type Level = 'active' | 'admin' | 'system_admin';
+type Level = 'active' | 'admin';
 const FUNCTIONS: [name: string, level: Level, validBody: Record<string, unknown>][] = [
   ['create-subscription', 'active', {
     member_id: 1, payment_mode: 'Cash', notes: null,
@@ -17,14 +17,14 @@ const FUNCTIONS: [name: string, level: Level, validBody: Record<string, unknown>
   ['invite-user', 'admin', { email: 'new@example.com', full_name: 'New User', roles: ['staff'] }],
   ['list-users', 'admin', {}],
   ['update-user', 'admin', { user_id: 'a0000000-0000-4000-8000-000000000002', full_name: 'X' }],
-  ['purge-member', 'system_admin', { member_id: 1 }],
+  ['delete-subscription', 'active', { subscription_id: 1 }],
   ['create-member', 'active', {}],
   ['update-member-number-sequence', 'admin', { branch_id: 1, next_sequence: 1 }],
 ];
 // Functions that read multipart/form-data, not JSON: the access gates below apply to them as they
 // are (they all fail before the body is read), the JSON body-shape cases do not (create-member.test.ts).
 const MULTIPART = new Set(['create-member']);
-const BELOW: Record<Level, 'none' | 'active' | 'admin'> = { active: 'none', admin: 'active', system_admin: 'admin' };
+const BELOW: Record<Level, 'none' | 'active' | 'admin'> = { active: 'none', admin: 'active' };
 
 for (const [fn, level, body] of FUNCTIONS) {
   Deno.test(`${fn}: OPTIONS preflight answers with CORS headers`, async () => {

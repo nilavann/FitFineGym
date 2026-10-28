@@ -314,7 +314,7 @@ Deno.test('clients: both clients use the fitfine schema and keep no session', ()
   assertEquals(world.clients.map((c) => c.key), ['service', 'anon']);
 });
 
-async function callerAt(level: 'active' | 'admin' | 'system_admin', headers: Record<string, string> = { Authorization: 'Bearer t' }) {
+async function callerAt(level: 'active' | 'admin', headers: Record<string, string> = { Authorization: 'Bearer t' }) {
   try {
     return await requireCaller(new Request('http://localhost/fn', { method: 'POST', headers }), level, serviceClient());
   } catch (e) {
@@ -333,9 +333,9 @@ Deno.test('requireCaller: 401 without a header or with an invalid session, befor
 });
 
 Deno.test('requireCaller: one user_access call decides each level', async () => {
-  const table: [string, 'active' | 'admin' | 'system_admin', number | 'ok'][] = [
+  const table: [string, 'active' | 'admin', number | 'ok'][] = [
     ['none', 'active', 403], ['active', 'active', 'ok'], ['active', 'admin', 403], ['admin', 'admin', 'ok'],
-    ['admin', 'system_admin', 403], ['system_admin', 'system_admin', 'ok'], ['none', 'admin', 403],
+    ['none', 'admin', 403],
   ];
   for (const [who, level, want] of table) {
     world.reset();
@@ -349,8 +349,8 @@ Deno.test('requireCaller: one user_access call decides each level', async () => 
 
 Deno.test('requireCaller: returns the caller with their access', async () => {
   world.reset();
-  access('system_admin', 2);
-  assertEquals(await callerAt('admin'), { id: 'caller-1', isActive: true, isAdmin: true, isSystemAdmin: true, otherActiveAdmins: 2 });
+  access('admin', 2);
+  assertEquals(await callerAt('admin'), { id: 'caller-1', isActive: true, isAdmin: true, otherActiveAdmins: 2 });
 });
 
 Deno.test('digits: exactly that many ASCII digits, no normalizing', () => {

@@ -3,7 +3,7 @@
 // entity's error codes to a refusal, and checks the shape of what comes back.
 import type { Client } from '../../_shared/clients.ts';
 import { rpcError } from '../../_shared/errors.ts';
-import type { CreateMemberRequest, MemberRow, PhotoPaths, PurgeResult } from './dto.ts';
+import type { CreateMemberRequest, DeleteResult, MemberRow, PhotoPaths } from './dto.ts';
 import { MEMBER_ERRORS } from './errors.ts';
 
 export interface MemberRepository {
@@ -11,10 +11,8 @@ export interface MemberRepository {
   create(callerId: string, input: CreateMemberRequest): Promise<MemberRow>;
   /** Stores the photo paths on the member. 404 as in MEMBER_ERRORS.setPhoto. */
   setPhoto(callerId: string, memberId: number, paths: PhotoPaths): Promise<void>;
-  /** Guarded soft delete, attributed to the caller. 404 / 409 as in MEMBER_ERRORS.softDelete. */
-  softDelete(callerId: string, memberId: number): Promise<void>;
-  /** The permanent delete (system admin). 404 / 409 as in MEMBER_ERRORS.purge. */
-  purge(callerId: string, memberId: number): Promise<PurgeResult>;
+  /** Guarded delete, attributed to the caller. 404 / 409 as in MEMBER_ERRORS.delete. */
+  delete(callerId: string, memberId: number): Promise<DeleteResult>;
 }
 
 export function memberRepository(admin: Client): MemberRepository {
@@ -39,20 +37,11 @@ export function memberRepository(admin: Client): MemberRepository {
       rpcError(error, MEMBER_ERRORS.setPhoto);
     },
 
-    async softDelete(callerId, memberId) {
-      const { error } = await admin.rpc('soft_delete_member', { p_caller_id: callerId, p_id: memberId });
-      rpcError(error, MEMBER_ERRORS.softDelete);
-    },
-
-    async purge(callerId, memberId) {
-      const { data, error } = await admin.rpc('purge_member', { p_caller_id: callerId, p_member_id: memberId });
-      rpcError(error, MEMBER_ERRORS.purge);
-      const result = (data ?? {}) as Partial<PurgeResult>;
-      return {
-        photo_paths: result.photo_paths ?? [],
-        subscriptions: result.subscriptions ?? 0,
-        items: result.items ?? 0,
-      };
+    async delete(callerId, memberId) {
+      const { data, error } = await admin.rpc('delete_member', { p_caller_id: callerId, p_id: memberId });
+      rpcError(error, MEMBER_ERRORS.delete);
+      const result = (data ?? {}) as Partial<DeleteResult>;
+      return { photo_paths: result.photo_paths ?? [] };
     },
   };
 }
