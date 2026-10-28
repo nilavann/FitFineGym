@@ -1,5 +1,5 @@
-// Soft-deletes a branch (admin). soft_delete_branch locks the row, refuses a branch that live members
-// belong to, and soft-deletes it, attributed to the caller, in one transaction.
+// Deletes a branch (admin). delete_branch locks the row, refuses a branch that members belong to, and
+// deletes it (with its member-number counter), attributed to the caller, in one transaction.
 // Its refusals arrive as 409 (in use) and 404 (missing or already deleted).
 import { requireCaller } from '../_shared/auth.ts';
 import { serviceClient } from '../_shared/clients.ts';
@@ -13,7 +13,7 @@ serve('delete-branch', async (req) => {
   const caller = await requireCaller(req, 'admin', admin);
   const body = parseBody(schema, await readJsonObject(req));
 
-  const { error } = await admin.rpc('soft_delete_branch', { p_caller_id: caller.id, p_id: body.branch_id });
+  const { error } = await admin.rpc('delete_branch', { p_caller_id: caller.id, p_id: body.branch_id });
   rpcError(error);
   return json({ success: true }, 200);
 });

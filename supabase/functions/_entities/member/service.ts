@@ -2,7 +2,7 @@
 // the repository and the photo storage as interfaces, so a test hands it fakes.
 import type { Client } from '../../_shared/clients.ts';
 import type {
-  CreateMemberRequest, CreateMemberResponse, DeleteMemberResponse, MemberPhoto, PurgeMemberResponse,
+  CreateMemberRequest, CreateMemberResponse, DeleteMemberResponse, MemberPhoto,
 } from './dto.ts';
 import { toMemberResponse } from './mapper.ts';
 import { type MemberPhotoStorage, memberPhotoStorage } from './photo-storage.ts';
@@ -10,8 +10,7 @@ import { type MemberRepository, memberRepository } from './repository.ts';
 
 export interface MemberService {
   create(callerId: string, input: CreateMemberRequest, photo: MemberPhoto | null): Promise<CreateMemberResponse>;
-  softDelete(callerId: string, memberId: number): Promise<DeleteMemberResponse>;
-  purge(callerId: string, memberId: number): Promise<PurgeMemberResponse>;
+  delete(callerId: string, memberId: number): Promise<DeleteMemberResponse>;
 }
 
 interface Deps {
@@ -44,18 +43,13 @@ export function createMemberService({ repo, photos, log = console.error }: Deps)
       }
     },
 
-    async softDelete(callerId, memberId) {
-      await repo.softDelete(callerId, memberId);
-      return { success: true };
-    },
-
-    // The rows are gone and can't be restored, so a storage failure is logged and reported, never
+    // The row is gone and can't be restored, so a storage failure is logged and reported, never
     // turned into an error: a retry would only find no member.
-    async purge(callerId, memberId) {
-      const purged = await repo.purge(callerId, memberId);
-      const cleanup = await photos.removeAll(memberId, purged.photo_paths);
+    async delete(callerId, memberId) {
+      const deleted = await repo.delete(callerId, memberId);
+      const cleanup = await photos.removeAll(memberId, deleted.photo_paths);
       if (!cleanup.removed) {
-        log('purge-member: member', memberId, 'erased but photos were not (fully) removed:', cleanup.paths, cleanup.error);
+        log('delete-member: member', memberId, 'deleted but photos were not (fully) removed:', cleanup.paths, cleanup.error);
       }
       return { success: true, photos_removed: cleanup.removed };
     },

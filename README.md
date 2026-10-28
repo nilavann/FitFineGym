@@ -45,7 +45,7 @@ A web app for running a gym's front desk: members, membership plans and add-ons,
    - [Bootstrapping the first admin](#99-bootstrapping-the-first-admin)
 10. [Deployment](#10-deployment)
     - [Environments and safety](#101-environments-and-safety)
-    - [First deployment: the final run](#102-first-deployment-the-final-run)
+    - [First deployment](#102-first-deployment)
     - [Authentication settings](#103-authentication-settings)
     - [Deploying the frontend to Vercel](#104-deploying-the-frontend-to-vercel)
     - [Post-deploy verification](#105-post-deploy-verification)
@@ -63,7 +63,7 @@ Fit & Fine replaces paper registers and spreadsheets at a gym. Front-desk staff 
 
 | Area | Capabilities |
 |---|---|
-| **Members** | Register members with photo (camera or upload, compressed in the browser), medical and emergency details; automatic per-branch member numbers; search and filter; soft delete |
+| **Members** | Register members with photo (camera or upload, compressed in the browser), medical and emergency details; automatic per-branch member numbers; search and filter; delete (blocked while the member has subscriptions) |
 | **Plans and subscriptions** | One catalogue of membership plans and add-ons; multi-item checkout with quantity multipliers; couple plans with a shared member; one-time (indefinite) items; renewals with an overlap warning |
 | **Action Center** | A work queue of members whose subscriptions are expiring or have expired |
 | **Reports** | Monthly membership and add-on counts, and an itemised transaction list |
@@ -73,7 +73,7 @@ Fit & Fine replaces paper registers and spreadsheets at a gym. Front-desk staff 
 ### 1.2 Design principles
 
 - **The client is untrusted.** Anyone can call the Supabase REST API directly, so every security or data-integrity rule lives in Postgres (RLS, triggers, constraints) or an Edge Function. Client-side validation exists only for instant feedback.
-- **Nothing is ever hard-deleted.** Business rows are soft-deleted (`deleted_at` / `deleted_by`), and a database trigger blocks real `DELETE`s. The single, deliberate exception is the system-admin-only permanent member purge.
+- **Deletes are real but guarded.** Members, subscriptions, plans, branches and roles are deleted for good, only through Edge Functions that check what still uses them, and every delete is written to the audit log. Users are never deleted, only deactivated.
 - **Everything is accountable.** Audit columns are stamped by the database from `auth.uid()`, and a field-level audit log records every change.
 - **The specs are the source of truth.** Behaviour is defined in [spec/](spec/) and binding engineering rules in [CLAUDE.md](CLAUDE.md); code follows them, not the other way round.
 
@@ -84,7 +84,7 @@ At the time of writing (see [TODO.md](TODO.md) for the live list):
 | Feature | State |
 |---|---|
 | Members, plans, checkout and renewal, Action Center, reports, admin screens | Implemented |
-| Permanent member delete and the reserved `system_admin` role (REQ-MEM-008, REQ-ADMIN-010) | Built; its migration and functions are not yet applied to a hosted project |
+| Hard delete of members, checkouts, plans, branches and roles; users only deactivated | Implemented |
 | Subscription cancellation and refund | Deferred by design |
 | Server-side subscription overlap enforcement | Deliberately client-side only (REQ-SUB-005/008) |
 
@@ -134,10 +134,8 @@ At the time of writing (see [TODO.md](TODO.md) for the live list):
 │   ├── migrations/               Ordered SQL migrations (the only way the schema changes)
 │   ├── functions/                Edge Functions: _shared/ (infrastructure), _entities/ (one folder
 │   │                             per entity), one folder per function, _tests/ (Deno)
-│   ├── tests/                    SQL test suite and run.sh
+│   ├── tests/                    SQL test suite, run.sh, its Supabase stub and local-db.sh
 │   └── config.toml               Supabase CLI config (`[api] schemas = ["fitfine"]`)
-│
-├── scripts/migrate-to-fitfine/   The final run: data, photos, migrations, functions, validation
 │
 ├── spec/                         Behaviour and architecture specs (source of truth)
 ├── CLAUDE.md                     Binding engineering rules (layers, responsive, testing)
@@ -271,12 +269,10 @@ There is no application server. Simple reads and writes go straight from the bro
 | `end_date` = `start_date + duration_days × quantity − 1` (null if indefinite) | `create-subscription` Edge Function, per item |
 | Subscription overlap warning | **Client-side only, by design.** No backend enforcement exists |
 | Plan, branch and role deletion guards | `delete-plan`, `delete-branch`, `delete-role` functions plus `ON DELETE RESTRICT` |
-| Audit fields (`created_by`, `changed_by`, `deleted_by`) | Postgres trigger reads `auth.uid()`; the client never sets them |
-| Soft delete only | `deleted_at` / `deleted_by` pattern, backstopped by a `prevent_hard_delete()` trigger |
-| Permanent member delete | `purge-member` function and a service-role-only `purge_member()`; system admins only |
+| Audit fields (`created_by`, `changed_by`) | Postgres trigger reads `auth.uid()`; the client never sets them |
+| Deletes | `delete-*` functions run the usage guard and the delete in one transaction; foreign keys without cascade are the backstop; the audit trigger records the deleted row. Users are deactivated, never deleted (`prevent_hard_delete()` guards `profiles` and `audit_log`) |
 | Role-based access | RLS policies (primary) plus route guards (UX only) |
 | User invitation | `invite-user` function using the service role |
-| Reserved `system_admin` role | Trigger on `roles`, guards in `replace_user_roles`, `invite-user` and `delete-role` |
 
 ### 5.4 Design patterns in use
 
@@ -286,9 +282,9 @@ There is no application server. Simple reads and writes go straight from the bro
 | **Repository pattern** | `repositories/` | Isolates Supabase specifics behind typed interfaces |
 | **Dependency injection via React Context** | `ServicesProvider`, `useServices()` | Services and repositories are wired in one place; tests pass fakes |
 | **Secured command endpoints** | `supabase/functions/*` | Writes that carry business rules run server-side with the service role after re-checking the caller's JWT |
-| **Transactional RPC** | `create_subscription_with_items`, `purge_member` | A multi-row write lands entirely or not at all |
+| **Transactional RPC** | `create_subscription_with_items`, `delete_subscription`, `delete_member` | A multi-row write lands entirely or not at all |
 | **Append-only line items** | `subscription_items` | Items are immutable after checkout; changes mean a new checkout |
-| **Soft delete plus trigger-enforced audit trail** | Every business table | Reversible deletes and full accountability |
+| **Guarded delete plus trigger-enforced audit trail** | Every business table | Deletes are checked first and leave a record of what was removed |
 | **Configuration table** | `configuration` | Operational constants (member-number start, increment, padding) are data, not code |
 | **Route guards and route metadata** | `RequireAuth`, `RequireAdmin`, `handle: { hideTabBar }` | Access UX and layout decisions are declared on the route, not path-matched in components |
 | **Single-render responsive branching** | `useIsTabletUp()` | Exactly one of table or cards is mounted; no hidden twin |
@@ -333,13 +329,13 @@ All functions re-validate the caller from the request JWT before doing anything 
 |---|---|---|
 | `create-subscription` | Active user | Validates a checkout, computes each `end_date`, blocks a repeat indefinite item, inserts the header and all items in one transaction |
 | `update-subscription` | Active user | Edits header fields only (`payment_mode`, `notes`) |
-| `delete-member` | Active user | Soft-deletes a member unless live subscription items reference them |
-| `purge-member` | System admin | Permanently erases a member, their subscriptions, audit rows and photos |
-| `delete-plan`, `delete-branch` | Admin | Usage guard, then soft delete |
-| `delete-role` | Admin | Usage guard, then soft delete; refuses the reserved `system_admin` role |
-| `invite-user` | Admin | Invites by email and assigns roles; only a system admin may grant `system_admin` |
+| `delete-member` | Active user | Deletes a member and their photos unless subscription items reference them |
+| `delete-subscription` | Active user | Deletes a checkout: its items, then its header |
+| `delete-plan`, `delete-branch` | Admin | Usage guard, then delete |
+| `delete-role` | Admin | Usage guard, then delete |
+| `invite-user` | Admin | Invites by email and assigns roles |
 | `list-users` | Admin | Lists users with their emails (needs the Admin API) |
-| `update-user` | Admin | Edits name, roles, active flag, or soft-deletes a user; protects against self-change and last-admin lockout |
+| `update-user` | Admin | Edits name, roles and active flag; protects against self-change and last-admin lockout |
 | `update-member-number-sequence` | Admin | Retargets a branch's member-number counter safely |
 
 Reports need no function: they are RLS-guarded reads available to every active user. Full contracts: [spec/backend/edge-functions.md](spec/backend/edge-functions.md).
@@ -352,7 +348,7 @@ Reports need no function: they are RLS-guarded reads available to every active u
 - **Couple plans.** A `max_members = 2` plan may name a second, distinct member on its membership item.
 - **Overlap warning.** The checkout form warns about overlapping dates before calling the function. It is a UX safety net, not a control.
 - **Member numbers.** Generated by the database per branch, continuous for the branch's lifetime, never reused. The client never supplies one.
-- **Phone numbers** are unique among live (not soft-deleted) members.
+- **Phone numbers** are unique among members.
 - **Dates.** Calendar dates are `YYYY-MM-DD` Postgres `date` values; timestamps are UTC `timestamptz`, converted to local time only for display.
 
 Details: [spec/backend/business-logic.md](spec/backend/business-logic.md).
@@ -364,7 +360,7 @@ Details: [spec/backend/business-logic.md](spec/backend/business-logic.md).
 | Attribute | What we require | How it is achieved | Verified by |
 |---|---|---|---|
 | **Security** | A hostile client cannot read or change what it should not | RLS on every table; service role key only in Edge Functions; each function re-checks JWT and role; invite-only sign-in; column-level grant limits self-edits on `profiles` to `full_name`; privileged RPCs revoked from `public, anon, authenticated`; private photo bucket with signed URLs | SQL tests (RLS, grants, triggers), Edge Function tests |
-| **Data integrity** | No orphaned, partial or silently altered records | Soft delete with `prevent_hard_delete()`; `CHECK`, `UNIQUE` and `RESTRICT` constraints; atomic RPCs for multi-row writes; immutable line items | SQL tests, including a concurrency test |
+| **Data integrity** | No orphaned, partial or silently altered records | Guarded deletes (usage guard plus foreign keys without cascade); `CHECK`, `UNIQUE` and `RESTRICT` constraints; atomic RPCs for multi-row writes; immutable line items | SQL tests, including a concurrency test |
 | **Auditability** | Every change is attributable | Audit columns stamped from `auth.uid()` by trigger; field-level `audit_log` written only by trigger and readable only by admins | SQL tests |
 | **Reliability and resilience** | The app fails clearly and recovers | Offline detection via `isNetworkError()` (not message matching); every data screen has loading, error and retry states; profile lookup times out after 10 s; a 401 anywhere returns the user to Login; sessions are re-checked when a tab regains focus; stale lazy chunks are caught by `ChunkLoadErrorBoundary` | Unit and E2E tests (offline, dead token, navigation race) |
 | **Performance** | Fast first load; member list under 1 s at roughly 2,000 members | Route-level code splitting; React and Supabase vendor chunks; one render branch per breakpoint; audit log capped at 500 rows per query | Production build chunk output |
@@ -382,10 +378,10 @@ Binding rules live in [CLAUDE.md](CLAUDE.md), [spec/backend/rules.md](spec/backe
 
 ### 7.1 Code
 
-- **TypeScript strict, no `any`.** Row types in `frontend/src/types/` match column names exactly, including `deleted_at` / `deleted_by`.
+- **TypeScript strict, no `any`.** Row types in `frontend/src/types/` match column names exactly.
 - **Respect the layers** ([5.2](#52-layered-client-architecture)). Components reach data only via `useServices()` or `useAuth()`.
-- **Never set audit columns from the client.** Omit `created_at`, `created_by`, `changed_at`, `changed_by`, `deleted_at` and `deleted_by` from insert and update payloads.
-- **No hard `DELETE`.** Use the soft-delete update pattern. A change that adds `.delete()` or `DELETE FROM` on a business table is rejected in review.
+- **Never set audit columns from the client.** Omit `created_at`, `created_by`, `changed_at` and `changed_by` from insert and update payloads.
+- **No direct client `DELETE`.** Deleting goes through a `delete-*` Edge Function so the usage guard runs. A change that adds `.delete()` on a business table from the browser is rejected in review. Never delete a user; deactivate.
 - **Dates** go through `frontend/src/lib/datetime.ts`. Never compute or trust a client-supplied `end_date`.
 - **Offline detection** uses `isNetworkError()` from `lib/network-error.ts`, never a comparison against a message such as `'Failed to fetch'`.
 - **Operational constants** belong in the `configuration` table, not in code.
@@ -420,9 +416,8 @@ The whole app switches at **one** breakpoint: `768px`.
 - **Schema changes only through `supabase/migrations/`.** Never edit an applied migration; add a new one. Never hand-edit the hosted schema.
 - **RLS is enabled on every table.** A table with RLS and no matching policy denies by default, which is the safe failure.
 - **Every Edge Function verifies the caller's identity and role from the JWT first.**
-- **Service-role reads must filter `deleted_at is null` explicitly**, because RLS does not apply to them. The only exception is `purge-member` (it must see soft-deleted members).
 - **Any new service-role RPC or internal table must `revoke ... from public, anon, authenticated` explicitly.** The older `revoke ... from public` pattern leaves it callable by signed-in users.
-- Only one permanent-delete path exists (`purge-member` / `purge_member()`). Do not add a second.
+- Every delete is a SECURITY DEFINER `delete_*` function behind a `delete-*` Edge Function, with its usage guard in the same transaction. Do not add a delete that skips the guard.
 
 ### 7.5 Working agreement
 
@@ -443,7 +438,7 @@ Four dev-only suites (nothing here ships to the browser), each aimed at the laye
 | **Unit and component** | Vitest, React Testing Library, jsdom | `lib/` helpers, services, contexts, components, pages, route table, repositories' request shapes | `npm run test:frontend` |
 | **End-to-end** | Playwright on a production build | User flows in real browsers and real CSS, in three projects | `npm run test:e2e:frontend` |
 | **Edge Functions** | Deno test runner | Auth gates, validation, guards and payload shaping for every function | `npm run test:functions` |
-| **Database** | SQL assertions on a throwaway Postgres | Access matrix of every role, constraints, triggers, RLS, RPCs, invite, storage, views, and the validation script | `npm run test:db` |
+| **Database** | SQL assertions on a throwaway Postgres | Access matrix of every role, constraints, triggers, RLS, RPCs, invite, storage and views | `npm run test:db` |
 
 `npm test` runs the frontend, function and database suites. E2E is excluded because it builds the app and is slower. The requirement-by-requirement map for the server-side suites is [spec/test-traceability.md](spec/test-traceability.md).
 
@@ -505,7 +500,7 @@ The import map swaps `@supabase/supabase-js` for the scriptable fake in `supabas
 npm run test:db
 ```
 
-`supabase/tests/run.sh` creates a throwaway database (`fitfine_backend_test`, override with `FITFINE_TEST_DB`) from the Supabase stub in `scripts/migrate-to-fitfine/tests/local/` and every migration, runs each `*.test.sql` in a transaction that ends in `ROLLBACK`, then runs `run.sh --validate-backend` on it, and drops the database. `scripts/migrate-to-fitfine/tests/local-db.sh start` starts a suitable local server (port 54329). Requirements:
+`supabase/tests/run.sh` creates a throwaway database (`fitfine_backend_test`, override with `FITFINE_TEST_DB`) from the Supabase stub `supabase/tests/supabase-stub.sql` and every migration, runs each `*.test.sql` in a transaction that ends in `ROLLBACK`, and drops the database. `eval "$(supabase/tests/local-db.sh start)"` starts a suitable local server (port 54329). Requirements:
 
 - `psql`, `createdb` and `dropdb` on `PATH`, and `bash` (Git Bash on Windows).
 - A reachable Postgres superuser, selected with the standard `PGHOST`, `PGPORT` and `PGUSER` variables. Supply the password through `PGPASSWORD` or a `pgpass` file (`%APPDATA%\postgresql\pgpass.conf` on Windows), never on the command line.
@@ -536,7 +531,7 @@ npm run test:db
 | Action Center | `e2e/action-center` | Queue window, tabs, badge, carousel, photo lightbox |
 | Reports | `e2e/reports` | Range presets as database filters, table vs cards, independent retry |
 | Admin: Settings, Plans, Branches, Roles | `e2e/settings-admin` | Hub counts, role gating, CRUD payloads, delete guards |
-| Admin: Users, Invite | `e2e/admin-users` | Function payloads, self-protection, soft delete and restore |
+| Admin: Users, Invite | `e2e/admin-users` | Function payloads, self-protection, deactivate and reactivate (no delete) |
 | Admin: Audit Log, Member Numbering | `e2e/admin-audit-numbering` | Filters as requests, view-only, atomic settings RPC |
 | Navigation under a slow connection | `e2e/navigation-race` | Back pressed while the next lazy screen is still loading |
 | Fonts | `e2e/fonts` | Only the Latin subsets download |
@@ -561,7 +556,7 @@ npm run test:db               # whenever a migration changed
 ### 9.1 Identity model
 
 - **Supabase Auth owns identity.** Email, password hash and OAuth identities live in `auth.users` and are never copied into app tables. A screen that needs the signed-in user's email reads it from the session.
-- **`profiles` is the app's user record**, 1:1 with `auth.users` (same `id`): `full_name`, `is_active`, audit and soft-delete columns. It has no `ON DELETE CASCADE`, so deleting an auth user directly fails rather than cascading into a hard delete.
+- **`profiles` is the app's user record**, 1:1 with `auth.users` (same `id`): `full_name`, `is_active` and audit columns. A user is deactivated, never deleted; it has no `ON DELETE CASCADE`, and `prevent_hard_delete()` refuses a `DELETE` on it.
 - **A profile is created only by invitation.** The `invite-user` function creates the auth user; the `handle_new_auth_user()` trigger creates the matching profile. Nothing else creates one.
 - **Roles are rows, not a column.** `roles` plus `user_roles` let a user hold several roles. Because ordinary users have no write grant on `user_roles`, a user cannot promote themselves.
 
@@ -588,10 +583,16 @@ Implemented in `frontend/src/context/auth.context.tsx`:
 ### 9.4 Password reset
 
 - Reset runs entirely in Supabase Auth: `resetPasswordForEmail`, then `updateUser({ password })` after following the emailed link. No Edge Function is involved.
-- The confirmation text is generic ("if that email is registered, a reset link has been sent") whether or not an account exists.
-- The link creates a real session through a `PASSWORD_RECOVERY` event. The app routes that session to `/reset-password`, a bare screen outside the app shell, and does nothing else until a new password is set.
+- The confirmation text is generic ("if that email is registered, a reset link has been sent") whether or not an account exists, because Supabase answers an unknown email exactly like a known one. A *failed send* is not hidden behind it: the login page and Settings → Change Password show what went wrong (`lib/reset-email-error.ts`, switching on the error's `status` / `code`): offline, too many requests, an address the email service may not send to, a rejected API key, or a generic "couldn't send, try again". None of these depends on whether the account exists, and the raw error text is never shown.
+- **If no email arrives**, in this order: (1) the login page now says why when the send fails; (2) Supabase's built-in mail service is for testing only: it delivers just to your organisation's team members and allows only a couple of emails an hour, so for real users configure **custom SMTP** (Project Settings → Authentication → SMTP Settings); (3) check the spam folder, and Authentication → Logs for the send attempt; (4) the address must belong to an invited user, otherwise Supabase sends nothing and still reports success.
+- The link creates a real session through a `PASSWORD_RECOVERY` event. The app routes that session to `/reset-password`, a bare screen outside the app shell, and does nothing else until a new password is set. That "reset pending" state is also remembered for the tab (read from the link's URL before supabase-js clears it, kept in `sessionStorage` for an hour, cleared when a password is set, on sign-out, or on an ordinary password sign-in), so a missed event or a page refresh cannot turn the recovery session into a normal sign-in.
 - A Google-only user can use the same flow to set a password for the first time.
 - **`redirectTo` must be allow-listed.** Supabase validates it against Authentication → URL Configuration → Redirect URLs. If the URL is not listed, no token is attached and the user lands on the Site URL with no session and no error. Add every real deployment origin there; `config.toml` configures only the local stack.
+- **Troubleshooting a link that opens the login page.** A reset link works once: Supabase uses the token up when it verifies the link, then redirects to the app. So "opens the login page the first time, *link expired* the second time" means the first visit used the token but the app received no session. Check, in this order:
+  0. **The API key in the app's env is accepted by the project.** Supabase's `/auth/v1/verify` redirect needs no key, so the link is checked and used up even when the key is bad; then every call the app makes with that key fails and the first visit ends on the login page. Test it: `curl -s "$VITE_SUPABASE_URL/auth/v1/settings" -H "apikey: $VITE_SUPABASE_ANON_KEY"` must return JSON settings, not `Invalid API key`. If it is rejected, copy the current key from Project Settings → API Keys (the publishable key, or the legacy `anon` key if legacy keys are still enabled) into `frontend/.env.local` and the Vercel environment, restart the dev server, and request a new reset link. The app now says so on the login page ("…its Supabase API key is invalid or disabled…").
+  1. **Redirect URLs and Site URL** (Authentication → URL Configuration) contain the exact origin the reset was requested from: the production domain, each Vercel preview domain (a wildcard such as `https://*-yourteam.vercel.app` works) and `http://localhost:5173`. Site URL must be a real deployed origin, not the default `http://localhost:3000`. This is the usual cause on a project whose dashboard has not been configured yet.
+  2. **The address bar right after clicking the link.** `#access_token=…&type=recovery` means the link worked (the app now shows the new-password form). `#error=…otp_expired` means the token was already used, typically by a mail scanner or link-preview that opened it first; request a new link and open it from a mail client that does not pre-fetch links. Nothing in the URL means the redirect was dropped (cause 1).
+  3. **The email template** (Authentication → Email Templates → Reset Password) must still use `{{ .ConfirmationURL }}`. A template rewritten to `…?token_hash=…` needs a different handler than this app has.
 
 ### 9.5 Roles
 
@@ -599,27 +600,25 @@ Implemented in `frontend/src/context/auth.context.tsx`:
 |---|---|---|
 | **Staff** | Day-to-day work: members, checkouts, reports | Not a special database rule. Any active user who is not an admin has this level of access |
 | **`admin`** | Staff access plus everything under Settings | Seeded. Checked by `is_admin_user()` in RLS and in every admin Edge Function |
-| **`system_admin`** | An admin who can also permanently delete a member and grant or remove this role | Reserved and seeded. Held on top of `admin` (`is_system_admin_user()` requires both). Cannot be created, renamed, edited or deleted from the app |
 
-Admins can add further roles in **Manage Roles**, but only `admin` and `system_admin` carry built-in behaviour. Every other role grants the same access as staff and acts as a label.
+Admins can add further roles in **Manage Roles**, but only `admin` carries built-in behaviour. Every other role grants the same access as staff and acts as a label.
 
 ### 9.6 Permission matrix
 
 Authority is the database or function named in the last column. The UI hides what a role cannot use, but that is convenience only.
 
-| Capability | Staff | Admin | System admin | Enforced by |
-|---|:---:|:---:|:---:|---|
-| Sign in; use Action Center, Members, Reports | ✅ | ✅ | ✅ | RLS on `is_active_user()` |
-| Add and edit members, upload photos | ✅ | ✅ | ✅ | RLS `members_*_active_users`; storage policies |
-| Soft-delete a member (blocked if it has subscription items) | ✅ | ✅ | ✅ | `delete-member` |
-| Create a checkout; edit a subscription's header | ✅ | ✅ | ✅ | `create-subscription`, `update-subscription` |
-| Create, edit and delete plans and branches | — | ✅ | ✅ | RLS plus `delete-plan`, `delete-branch` |
-| Manage the role catalogue | — | ✅ | ✅ | RLS plus `delete-role` |
-| Invite, edit, deactivate and delete users; assign roles | — | ✅ | ✅ | `invite-user`, `list-users`, `update-user` |
-| View the audit log | — | ✅ | ✅ | RLS `audit_log_select_admin` |
-| Configure member numbering | — | ✅ | ✅ | RLS plus `update-member-number-sequence` |
-| Grant or remove the `system_admin` role | — | — | ✅ | `replace_user_roles`, `invite-user` |
-| Permanently delete a member | — | — | ✅ | `purge-member` and `purge_member()` |
+| Capability | Staff | Admin | Enforced by |
+|---|:---:|:---:|---|
+| Sign in; use Action Center, Members, Reports | ✅ | ✅ | RLS on `is_active_user()` |
+| Add and edit members, upload photos | ✅ | ✅ | RLS `members_*_active_users`; storage policies |
+| Delete a member (blocked while it has subscription items) | ✅ | ✅ | `delete-member` |
+| Delete a checkout (its items and header) | ✅ | ✅ | `delete-subscription` |
+| Create a checkout; edit a subscription's header | ✅ | ✅ | `create-subscription`, `update-subscription` |
+| Create, edit and delete plans and branches | — | ✅ | RLS plus `delete-plan`, `delete-branch` |
+| Manage the role catalogue | — | ✅ | RLS plus `delete-role` |
+| Invite, edit and deactivate users; assign roles | — | ✅ | `invite-user`, `list-users`, `update-user` |
+| View the audit log | — | ✅ | RLS `audit_log_select_admin` |
+| Configure member numbering | — | ✅ | RLS plus `update-member-number-sequence` |
 
 ### 9.7 Route guards and navigation
 
@@ -628,14 +627,13 @@ Authority is the database or function named in the last column. The UI hides wha
 | `RequireAuth` | Everything except `/login` and `/reset-password` | Redirects to Login when there is no active profile |
 | `RequireAdmin` | `/settings`, `/plans`, `/branches`, `/users`, `/users/invite`, `/roles`, `/audit-log`, `/member-numbering` | Shows "Access denied" unless the profile holds `admin` |
 
-Navigation is filtered from one list (`components/nav-items.tsx`): staff see Action Center, Members and Reports; admins also see Settings. The permanent-delete button appears only when `isSystemAdmin(roles)` is true. All of this is user-experience only; a direct API call is stopped by RLS and the functions.
+Navigation is filtered from one list (`components/nav-items.tsx`): staff see Action Center, Members and Reports; admins also see Settings. All of this is user-experience only; a direct API call is stopped by RLS and the functions.
 
 ### 9.8 Account safety rules
 
-- An admin cannot change their **own** roles or active flag, or delete their own account, through `update-user`. Editing their own name is allowed.
-- **Last-admin lockout.** Removing the admin role from, deactivating, or soft-deleting the last active admin is refused, whoever performs it.
-- **Deactivation** is a reversible toggle (`is_active`). **Deletion** is a soft delete that hides the account from User Management. They are independent.
-- Only a system admin can grant or remove `system_admin`. Editing a system admin's other roles is fine while `system_admin` stays in the list.
+- An admin cannot change their **own** roles or active flag through `update-user`. Editing their own name is allowed.
+- **Last-admin lockout.** Removing the admin role from or deactivating the last active admin is refused, whoever performs it.
+- **Deactivation** is a reversible toggle (`is_active`) and the only way to remove a user's access. Users are never deleted, so their name stays on everything they did.
 - `user_roles` has no client write path. Every role change goes through `replace_user_roles()` (service role only).
 
 ### 9.9 Bootstrapping the first admin
@@ -649,15 +647,6 @@ A new Supabase project has no users, and seeding a well-known admin credential w
    select '<the new auth.users.id>', id from roles where name = 'admin';
    ```
 3. Sign in. From now on, create every other user through **Settings → Users → Invite**.
-
-**First system admin.** Only a system admin can grant `system_admin`, so the first one is also granted by hand. The user must already hold `admin`, and the migration that seeds the role (`20261008000000`) must be applied:
-
-```sql
-insert into user_roles (user_id, role_id)
-select '<that user''s auth.users.id>', id from roles where name = 'system_admin' and deleted_at is null;
-```
-
-Until someone holds it, nobody sees the permanent-delete button.
 
 ---
 
@@ -679,29 +668,23 @@ Run at least two separate environments, each with its own Supabase project and i
 - Run `npx supabase db push --dry-run` first to see which migrations would apply.
 - Keep secrets for each environment in gitignored local files or the platform's secret store, never in the repository, a chat or a command line.
 
-### 10.2 First deployment: the final run
+### 10.2 First deployment
 
-The backend in `supabase/` is the `fitfine` schema. It is first deployed to a **brand-new** Supabase project by one script, which also moves the data and the member photos out of the old project (only ever read). Everything it needs goes in `scripts/migrate-to-fitfine/.env.local` (copy `.env.example`; every variable is explained there):
+To set up a new Supabase project (for example a disposable development project), from the repository root:
 
 ```bash
-cd scripts/migrate-to-fitfine
-cp .env.example .env.local      # fill it in; git-ignored
-./run.sh --preflight            # read-only checks first
-./run.sh --final                # asks you to type the target project ref
+npx supabase db push --dry-run --db-url "$TARGET_DB_URL"     # preview: every migration in supabase/migrations/
+npx supabase db push --db-url "$TARGET_DB_URL"
+npx supabase functions deploy <name> --use-api --project-ref <ref>   # each function; SUPABASE_ACCESS_TOKEN in the environment
 ```
-
-`--final` stops at the first failure. It runs: the checks (refusing a project key in place of an access token, a target that is the source, or a project that already has a migration history), the data load and its validation, the photo copy and its validation, the migrations (`--deploy-backend`: constraints, grants, access rule, triggers, policies, views, API functions, storage, then `--validate-backend`), and the Edge Functions (`--deploy-functions`: deploy, check all are active with JWT verification on, smoke-test each). It ends with the steps left to do by hand. Each step is also a mode of its own for a re-run; details in [scripts/migrate-to-fitfine/README.md](scripts/migrate-to-fitfine/README.md).
 
 Then, by hand:
 
 1. Project Settings → Data API → **Exposed schemas: `fitfine` only.** Until then the app gets no data.
 2. Authentication settings ([10.3](#103-authentication-settings)).
-3. Give a role to every active user the run lists under B.12: a user without a role has no access.
-4. Update and test the frontend on a Vercel preview ([spec/frontend/backend-api-changes.md](spec/frontend/backend-api-changes.md), [10.4](#104-deploying-the-frontend-to-vercel)).
-5. At cutover: switch Vercel production to the new project, then revoke the old project's keys (or pause it), and revoke the access token used for the run.
-6. **Verify** ([10.5](#105-post-deploy-verification)).
-
-The old project must keep running until the final run has finished; nothing in the repo refers to it any more.
+3. Bootstrap the first admin ([9.9](#99-bootstrapping-the-first-admin)). Every active user needs a role: a user without one has no access.
+4. Point a Vercel environment at the project ([10.4](#104-deploying-the-frontend-to-vercel)).
+5. **Verify** ([10.5](#105-post-deploy-verification)).
 
 ### 10.3 Authentication settings
 
@@ -727,7 +710,7 @@ npx supabase db push --db-url "$TARGET_DB_URL"
 npx supabase functions deploy <name> --use-api --project-ref <ref>   # SUPABASE_ACCESS_TOKEN in the environment
 ```
 
-Or `scripts/migrate-to-fitfine/run.sh --deploy-backend` / `--deploy-functions`, which do the same and run their checks. After a migration change, regenerate the validation snapshot and commit it with the migration: `PGHOST=localhost PGPORT=54329 PGUSER=postgres scripts/migrate-to-fitfine/tests/backend-expected.sh`.
+Run `npm run test:db` after a migration change, before pushing it.
 
 `SUPABASE_URL`, `SUPABASE_ANON_KEY` and `SUPABASE_SERVICE_ROLE_KEY` are provided to Edge Functions automatically; the functions need no other secret. Never copy the service role key into frontend code, a `VITE_*` variable or a committed file.
 
@@ -785,7 +768,7 @@ Or `scripts/migrate-to-fitfine/run.sh --deploy-backend` / `--deploy-functions`, 
 | Frontend (`frontend/.env.local`, Vercel) | `VITE_SUPABASE_URL` | Supabase project URL | No |
 | Frontend (`frontend/.env.local`, Vercel) | `VITE_SUPABASE_ANON_KEY` | Public anon key; RLS protects the data | No (public by design) |
 | Edge Functions (automatic) | `SUPABASE_URL`, `SUPABASE_ANON_KEY` | Used to verify the caller | No |
-| Deploy script (`scripts/migrate-to-fitfine/.env.local`) | Source and target database URLs, both projects' service role keys (photo copy), `SUPABASE_ACCESS_TOKEN` (function deploy) | The final run and later deploys | **Yes. Git-ignored, never committed** |
+| Your shell (deploys only) | `TARGET_DB_URL` (`db push`), `SUPABASE_ACCESS_TOKEN` (function deploy) | Releasing migrations and functions | **Yes. Never committed** |
 | Edge Functions (automatic) | `SUPABASE_SERVICE_ROLE_KEY` | Bypasses RLS; used for privileged writes | **Yes. Never in the frontend** |
 | Database (`configuration` table) | Member-number start, increment and padding | Operational constants | No |
 | Supabase dashboard | Site URL, Redirect URLs, Google provider, SMTP | Auth behaviour | Provider secrets: yes |

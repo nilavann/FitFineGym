@@ -71,7 +71,7 @@ One form, single column on mobile, no subscription collected here (that's the se
 
 ### Member Detail — additions beyond the base record
 
-Member number shown read-only near the hero; `handled_by_staff` remains editable here too (reassignable after the fact); a photo upload/camera-capture control (shows the full-resolution `photo_url`, not the thumbnail); a Delete action (soft delete, confirm dialog, returns to the Members list). Member-field saves and subscription saves are completely independent actions with their own loading/error state.
+Member number shown read-only near the hero; `handled_by_staff` remains editable here too (reassignable after the fact); a photo upload/camera-capture control (shows the full-resolution `photo_url`, not the thumbnail); a Delete action (a real delete, refused while the member has subscriptions; confirm dialog, returns to the Members list). Member-field saves and subscription saves are completely independent actions with their own loading/error state.
 
 ### Renew / Add Subscription — checkout form
 

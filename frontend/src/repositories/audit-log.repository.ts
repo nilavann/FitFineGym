@@ -6,9 +6,8 @@ const AUDIT_SELECT =
 
 /**
  * Every table `audit_row_changes()` is actually attached to (REQ-AUDIT-001's six required
- * tables plus the two bonus ones from the roles/user_roles redesign) — see
- * spec/backend/domain-model.md §7 and 20260720000200_views_and_audit.sql /
- * 20260722000000_roles_and_user_roles.sql. `audit_log` itself is never in this list, since
+ * tables plus roles and user_roles) — see spec/backend/domain-model.md §7 and the
+ * triggers migration in supabase/migrations/. `audit_log` itself is never in this list, since
  * it is the mechanism, not a table being audited.
  */
 export const AUDITED_TABLES = [
@@ -49,7 +48,7 @@ interface RawEntry {
   changed_at: string;
 }
 
-// EAV growth here has no retention/partitioning story yet (domain-model-review.md) - a wide
+// EAV growth here has no retention/partitioning story yet - a wide
 // unfiltered range on a long-lived app could return an unbounded number of rows. Capped and
 // surfaced as `truncated` rather than silently returning a partial page with no indication.
 const MAX_ROWS = 500;

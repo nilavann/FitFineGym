@@ -1,13 +1,5 @@
--- Views (spec/migration/phase-2-plan.md §2.4, Task 7). The same columns and joins as the
--- source's current definitions (member_list_view as of
--- 20261024000000_member_list_view_latest_membership.sql), schema-qualified, and
--- security_invoker = true: each view now reads its tables under the caller's RLS. What the
--- screens show doesn't change:
---   member_list_view already filters members.deleted_at is null, like the members policy.
---   member_current_items joins plans, whose policy hides deleted plans; soft_delete_plan refuses
---     a plan that live items use, so no current item points at one.
---   profiles_with_roles: every frontend read asks for non-deleted profiles only; deleted users
---     come from list-users, through the service role.
+-- Views, all security_invoker = true: each reads its tables under the caller's RLS, so a view
+-- shows an active user what the table policies allow and a deactivated user nothing.
 
 -- One row per (current item, member it covers): the item's member, and its shared member if any.
 create view fitfine.member_current_items with (security_invoker = true) as

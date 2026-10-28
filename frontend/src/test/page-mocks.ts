@@ -10,4 +10,9 @@ vi.mock('../context/auth.context', () => ({
   useAuth: () => holder.auth,
   AuthProvider: ({ children }: { children: unknown }) => children,
 }));
-vi.mock('../lib/supabase-client', () => ({ supabase: {}, SESSION_EXPIRED_EVENT: 'supabase:session-expired' }));
+vi.mock('../lib/supabase-client', () => ({
+  supabase: {},
+  SESSION_EXPIRED_EVENT: 'supabase:session-expired',
+  INVALID_API_KEY_EVENT: 'supabase:invalid-api-key',
+  hasApiKeyBeenRejected: () => false,
+}));

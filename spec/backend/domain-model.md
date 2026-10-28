@@ -19,7 +19,7 @@ Every entity carries these four columns, not repeated per table:
 | changed_at | timestamptz | Yes      | NULL    | Set on every UPDATE by trigger                           |
 | changed_by | uuid        | Yes      | NULL    | FK → `profiles.id`, set on every UPDATE by trigger        |
 
-Never client-settable — see [database.md](./database.md)'s `set_audit_fields()` trigger. Every entity except AuditLog, `configuration`, `member_number_sequences`, and UserRole also carries `deleted_at`/`deleted_by` (soft-delete columns) — see [database.md §Soft-Delete Fields](./database.md#soft-delete-fields-common-to-every-business-table-below). UserRole also doesn't carry `created_at`/`changed_at` in this shared shape — see §1b, it has its own `granted_at`/`granted_by` instead.
+Never client-settable — see [database.md](./database.md)'s `set_audit_fields()` trigger. No entity carries `deleted_at`/`deleted_by`: nothing is soft-deleted (members, subscriptions, plans, branches and roles are deleted for real behind a usage guard; users are only deactivated) — see [database.md §Hard Delete Guards](./database.md#hard-delete-guards). UserRole also doesn't carry `created_at`/`changed_at` in this shared shape — see §1b, it has its own `granted_at`/`granted_by` instead.
 
 ---
 
@@ -35,19 +35,19 @@ One row per Supabase Auth user (`auth.users`), linked 1:1. Reachable via either 
 
 **Triggers**
 - `trg_handle_new_auth_user` (`AFTER INSERT` on `auth.users`, not on `profiles` itself) — `handle_new_auth_user()` creates the matching `profiles` row automatically whenever a new Auth user appears (invite or bootstrap); attributes `created_by` to the inviting admin via a per-transaction `set_config` trick, since this runs under the invite flow's own connection, not the inviting admin's session.
-- `trg_profiles_audit` (`BEFORE INSERT OR UPDATE`) — `set_audit_fields()`: stamps `created_at`/`created_by` on insert, `changed_at`/`changed_by` on every update. Does **not** touch `deleted_at`/`deleted_by`.
-- `trg_profiles_no_hard_delete` (`BEFORE DELETE`) — `prevent_hard_delete()`: unconditionally rejects any real `DELETE`.
+- `trg_profiles_audit` (`BEFORE INSERT OR UPDATE`) — `set_audit_fields()`: stamps `created_at`/`created_by` on insert, `changed_at`/`changed_by` on every update.
+- `trg_profiles_no_hard_delete` (`BEFORE DELETE`) — `prevent_hard_delete()`: unconditionally rejects any real `DELETE`. A user is never deleted, only deactivated.
 - `trg_profiles_audit_fields` (`AFTER INSERT OR UPDATE`) — `audit_row_changes()`: writes one `AuditLog` row per changed field.
 
-**Indexes**: PK on `id`, plus `created_by`/`changed_by`/`deleted_by` (`20260724000000_profiles_fk_indexes.sql`) — the missing-FK-index finding in domain-model-review.md is closed, here and on every other table it named.
+**Indexes**: PK on `id`, plus `created_by`/`changed_by`, and the same on every other table with these columns.
 
-**RLS (select)**: `profiles_select_active_users` (any active, non-deleted caller can read any non-deleted profile) plus `profiles_select_self` — a user can always read their **own** row even while deactivated (`auth.uid() = id and deleted_at is null`, no `is_active_user()` gate). Without this second policy, a deactivated caller would fail `is_active_user()` and get zero rows back, indistinguishable from "never invited" — the app needs to tell those two cases apart (REQ-AUTH-003's message vs. the deactivation message), so the self-lookup can't itself depend on being active. Still excludes soft-deleted rows, consistent with every other soft-delete policy. (This policy previously went undocumented in both this doc and auth.md, despite being live since the initial profiles/auth migration.)
+**RLS (select)**: `profiles_select_active_users` (any active caller can read any profile) plus `profiles_select_self` — a user can always read their **own** row even while deactivated (`auth.uid() = id`, no `is_active_user()` gate). Without this second policy, a deactivated caller would fail `is_active_user()` and get zero rows back, indistinguishable from "never invited" — the app needs to tell those two cases apart (REQ-AUTH-003's message vs. the deactivation message), so the self-lookup can't itself depend on being active.
 
-**Delete protection**: `id`'s FK to `auth.users(id)` carries no `ON DELETE CASCADE` (the one FK in the schema that used to be an exception — now closed), so a Supabase Auth `admin.deleteUser()` call fails with a foreign-key violation instead of cascading into a real row delete here. Combined with `trg_profiles_no_hard_delete`, a real `DELETE` is unreachable through any path — soft-delete via `soft_delete_profile()` (below) is the only way a Profile is ever removed.
+**Delete protection**: `id`'s FK to `auth.users(id)` carries no `ON DELETE CASCADE`, so a Supabase Auth `admin.deleteUser()` call fails with a foreign-key violation instead of cascading into a real row delete here. Combined with `trg_profiles_no_hard_delete`, a real `DELETE` is unreachable through any path — deactivation (`is_active = false`) is the only way a user is ever taken out of use, and their profile stays so that `created_by`, `handled_by_staff` and the audit log keep resolving to a name.
 
-**Validation / write restrictions**: `full_name` required; `is_active` boolean, defaults `true`. Direct client `UPDATE` is restricted at the column-privilege level — `revoke update on profiles from authenticated; grant update (full_name) on profiles to authenticated` — so `is_active`/`deleted_at` cannot be touched by a direct `supabase-js` call regardless of RLS policy, only through the RPCs below. `role` was removed as a column entirely (§1a/§1b).
+**Validation / write restrictions**: `full_name` required; `is_active` boolean, defaults `true`. Direct client `UPDATE` is restricted at the column-privilege level — `revoke update on profiles from authenticated; grant update (full_name) on profiles to authenticated` — so `is_active` cannot be touched by a direct `supabase-js` call regardless of RLS policy, only through the RPCs below. `role` was removed as a column entirely (§1a/§1b).
 
-**Deletion (REQ-ADMIN-006)**: admin can soft-delete a user account — separate from, and independent of, the `is_active` toggle above — via the `soft_delete_profile(p_caller_id, p_target_user_id)` RPC (`security definer`, `service_role`-only, called from `update-user`). Never on the caller's own row, and never on the last remaining active admin regardless of whose account it is (§1b) — enforced by `count_other_active_admins()`.
+**Deletion (REQ-ADMIN-006) is retired:** users are never deleted. There is no `soft_delete_profile` / `restore_profile`; the admin toggles `is_active` through `update_profile_fields` (via `update-user`). Never on the caller's own row, and never on the last remaining active admin regardless of whose account it is (§1b) — enforced by `other_active_admins()`.
 
 **Role lives in a separate entity (§1a/§1b), not a column here** — a Profile can hold more than one Role.
 
@@ -65,20 +65,19 @@ Admin-managed catalog of assignable role names — same shape/conventions as Bra
 
 **Triggers**
 - `trg_roles_audit` (`BEFORE INSERT OR UPDATE`) — `set_audit_fields()`.
-- `trg_roles_no_hard_delete` (`BEFORE DELETE`) — `prevent_hard_delete()`.
 - `trg_roles_audit_fields` (`AFTER INSERT OR UPDATE`) — `audit_row_changes()`.
 
-**Indexes**: `idx_roles_name_active` — unique partial index on `name` `where deleted_at is null` (a soft-deleted role's name can be reused).
+**Indexes**: `idx_roles_name` — unique index on `name`.
 
 **Validation**: `name` required; `description` optional.
 
-**Deletion guard**: a role referenced by any UserRole cannot be deleted — enforced by the `delete-role` Edge Function's usage check (counts `user_roles where role_id = ...` before soft-deleting) *and*, at the DB level, `trg_roles_no_hard_delete` blocking a real `DELETE` regardless of that check. Same pattern as Plan/Branch (business-logic.md).
+**Deletion guard**: a role referenced by any UserRole cannot be deleted — enforced by `delete_role` (called by the `delete-role` Edge Function), which counts `user_roles where role_id = ...` in the same transaction as the delete, *and* by the `user_roles.role_id` foreign key (no cascade). The delete is audited. Same pattern as Plan/Branch (business-logic.md).
 
 ---
 
 ## 1b. UserRole
 
-Many-to-many join between Profile and Role — a user can hold more than one Role. No `deleted_at`/`deleted_by`: unlike every other entity in this model, a role grant/revoke is a real add/remove, not a soft-delete — the same class of exception the internal `member_number_sequences` counter already gets (database.md), except UserRole *is* audited (a security-relevant change), where that internal counter isn't.
+Many-to-many join between Profile and Role — a user can hold more than one Role. No `deleted_at`/`deleted_by` and no soft delete: a role grant/revoke is a real add/remove, the same class of exception the internal `member_number_sequences` counter already gets (database.md), except UserRole *is* audited (a security-relevant change), where that internal counter isn't.
 
 | Field      | Type        | Nullable | Default | Constraints                          |
 |------------|-------------|----------|---------|------------------------------------------|
@@ -87,13 +86,13 @@ Many-to-many join between Profile and Role — a user can hold more than one Rol
 | granted_at | timestamptz | No       | `now()` |                                           |
 | granted_by | uuid        | Yes      | —       | FK → Profile                             |
 
-**Triggers**: `trg_user_roles_audit_fields` (`AFTER INSERT OR DELETE` — note: no `UPDATE`, a role change is a delete-then-insert) — `audit_row_changes()`'s `DELETE` branch, the one table that actually reaches it (every other table's `DELETE` is unreachable). No `set_audit_fields`/`prevent_hard_delete` trigger at all — this table has neither audit-fields columns nor a soft-delete column, and a real `DELETE` is the legitimate revoke operation here by design, not something to block.
+**Triggers**: `trg_user_roles_audit_fields` (`AFTER INSERT OR DELETE` — note: no `UPDATE`, a role change is a delete-then-insert) — `audit_row_changes()`, which now also handles `DELETE` for the six business tables, so this is no longer the only table that reaches that branch. No `set_audit_fields`/`prevent_hard_delete` trigger at all — this table has no audit-fields columns, and a real `DELETE` is the legitimate revoke operation here by design, not something to block.
 
 **Indexes**: composite PK on `(user_id, role_id)`; `idx_user_roles_role_id` on `role_id`.
 
 **No direct client write access at all** — no insert/update/delete RLS policy exists for any role; every change goes through `replace_user_roles(p_caller_id, p_target_user_id, p_role_ids)` (`security definer`, `service_role`-only RPC — a delete-then-insert of the full role set in one transaction), called from `update-user` (edge-functions.md §5). This is what makes self-escalation to admin structurally impossible rather than merely restricted.
 
-**Last-admin lockout**: removing the admin Role from a user, deactivating them, or soft-deleting them is blocked if it would leave zero active admins — checked against the *system* via `count_other_active_admins(p_exclude_user_id)`, not just "is this my own row" (two different admins could otherwise still lock everyone out between them). `replace_user_roles` itself carries this guard for the "removing the admin role" case; the deactivate/soft-delete cases are guarded in `update-user`.
+**Last-admin lockout**: removing the admin Role from a user or deactivating them is blocked if it would leave zero active admins — checked against the *system* via `other_active_admins(p_user_id)`, not just "is this my own row" (two different admins could otherwise still lock everyone out between them). `replace_user_roles` carries this guard for the "removing the admin role" case; `update_profile_fields` carries it for deactivation.
 
 ---
 
@@ -111,12 +110,11 @@ Branches carry no access-control or filtering meaning today — every staff/admi
 
 **Triggers**
 - `trg_branches_audit` (`BEFORE INSERT OR UPDATE`) — `set_audit_fields()`.
-- `trg_branches_no_hard_delete` (`BEFORE DELETE`) — `prevent_hard_delete()`.
 - `trg_branches_audit_fields` (`AFTER INSERT OR UPDATE`) — `audit_row_changes()`.
 
-**Indexes**: `idx_branches_code_active` — unique partial index on `code` `where deleted_at is null` (a soft-deleted branch's code can be reused).
+**Indexes**: `idx_branches_code` — unique index on `code`.
 
-**Deletion guard**: a branch referenced by any non-deleted Member (`members.branch_id`) cannot be deleted — enforced by the `delete-branch` Edge Function's usage check, with `trg_branches_no_hard_delete` separately guaranteeing no real `DELETE` can ever occur regardless.
+**Deletion guard**: a branch referenced by any Member (`members.branch_id`) cannot be deleted — enforced by `delete_branch` (called by the `delete-branch` Edge Function), which counts the members in the same transaction as the delete, with the `members.branch_id` foreign key (no cascade) as the backstop. The branch's `member_number_sequences` counter row is deleted with it (`ON DELETE CASCADE`). The delete is audited.
 
 ---
 
@@ -135,14 +133,13 @@ Admin-managed catalog — **unified** for both gym membership plans and add-ons 
 
 **Triggers**
 - `trg_plans_audit` (`BEFORE INSERT OR UPDATE`) — `set_audit_fields()`.
-- `trg_plans_no_hard_delete` (`BEFORE DELETE`) — `prevent_hard_delete()`.
 - `trg_plans_audit_fields` (`AFTER INSERT OR UPDATE`) — `audit_row_changes()`.
 
-**Indexes**: `idx_plans_name_active` — unique partial index on `name` `where deleted_at is null`; `idx_plans_category` — plain index on `category` (membership vs. addon filtering).
+**Indexes**: `idx_plans_name` — unique index on `name`; `idx_plans_category` — plain index on `category` (membership vs. addon filtering).
 
 **Named CHECK constraints** (beyond the per-field CHECKs already noted in the table above): `chk_plan_duration_required_when_membership` (`category <> 'membership' or duration_days is not null`); `chk_plan_max_members_only_for_membership` (`category = 'membership' or max_members = 1`).
 
-**Deletion guard**: a plan referenced by any non-deleted `SubscriptionItem` (`subscription_items.plan_id`) cannot be deleted — enforced by the `delete-plan` Edge Function's usage check (counts non-deleted `subscription_items` rows first). `subscription_items.plan_id`'s FK is also explicitly declared `on delete restrict` — the one FK in the whole schema with an explicit `ON DELETE` clause, functionally redundant with `trg_plans_no_hard_delete` blocking real deletes anyway, but documents the intent directly on the FK too.
+**Deletion guard**: a plan referenced by any `SubscriptionItem` (`subscription_items.plan_id`) cannot be deleted — enforced by `delete_plan` (called by the `delete-plan` Edge Function), which counts `subscription_items` rows in the same transaction as the delete. `subscription_items.plan_id`'s FK is also explicitly declared `on delete restrict`, so the guard cannot be skipped. The delete is audited.
 
 **Parked**: a `refundable` flag (or equivalent cancellation-eligibility marker) is deferred along with the rest of the cancellation/refund design — see §Open items. Until that exists, every catalog item behaves the same way with respect to cancellation: no cancellation flow exists yet at all.
 
@@ -154,7 +151,7 @@ Admin-managed catalog — **unified** for both gym membership plans and add-ons 
 |---------------------------------|-----------|----------|---------|----------------------|
 | id                               | bigint    | No       | identity | PK |
 | name                             | text      | No       | —       | |
-| phone                            | text      | No       | —       | **Unique** among non-deleted members (REQ-MEM-001/006) |
+| phone                            | text      | No       | —       | **Unique** (REQ-MEM-001/006) |
 | date_of_birth                    | date      | No       | —       | Mandatory |
 | date_of_joining                  | date      | No       | today (client default) | Editable by staff before submit |
 | gender                           | text      | No       | —       | CHECK IN ('Male','Female','Other') |
@@ -179,10 +176,9 @@ Admin-managed catalog — **unified** for both gym membership plans and add-ons 
 **Triggers**
 - `trg_members_generate_number` (`BEFORE INSERT OR UPDATE`) — `generate_member_number()`, see §Member Number Generation below.
 - `trg_members_audit` (`BEFORE INSERT OR UPDATE`) — `set_audit_fields()`. Firing order relative to `trg_members_generate_number` doesn't matter — the two touch disjoint columns.
-- `trg_members_no_hard_delete` (`BEFORE DELETE`) — `prevent_hard_delete()`.
 - `trg_members_audit_fields` (`AFTER INSERT OR UPDATE`) — `audit_row_changes()`; runs last, after both `BEFORE` triggers have finished, so it always records the fully-resolved row.
 
-**Indexes**: `idx_members_number_active` — unique partial on `member_number` `where deleted_at is null`; `idx_members_phone_active` — unique partial on `phone` `where deleted_at is null` (frees a soft-deleted member's phone for reuse); `idx_members_branch_id` — plain index on `branch_id`.
+**Indexes**: `idx_members_number` — unique on `member_number`; `idx_members_phone` — unique on `phone` (a deleted member's row is gone, so its phone is free to reuse); `idx_members_branch_id` — plain index on `branch_id`.
 
 **Named CHECK constraint**: `chk_doctor_care_details_required` (`under_doctor_care = false or (doctor_care_details is not null and length(trim(doctor_care_details)) > 0)`).
 
@@ -195,9 +191,9 @@ Admin-managed catalog — **unified** for both gym membership plans and add-ons 
 - **Atomicity**: the counter bump happens inside this same `BEFORE INSERT` trigger, so it's part of the same transaction as the row insert. Postgres validates `NOT NULL`/`CHECK`/`UNIQUE` constraints only *after* all `BEFORE ROW` triggers finish — so if the insert is later rejected (e.g. duplicate phone), the sequence bump rolls back with it. The only residual gap is a benign concurrency artifact (a rolled-back concurrent insert "wastes" a number) — an accepted trade-off for a display identifier, not something worth serializing inserts to avoid.
 - `member_number_sequences` and `configuration` are the two supporting internal tables this trigger depends on — see §Internal / System Tables below.
 
-**Delete protection**: `trg_members_no_hard_delete` blocks any real `DELETE`. Soft-delete now has a usage guard matching Branch/Plan/Role: the `delete-member` Edge Function counts non-deleted `subscription_items` referencing the member (as either `member_id` or `shared_member_id`) and blocks with a "used by X subscription/add-on record(s)" error before soft-deleting. `MemberDetailPage`'s "Delete Member" button calls `memberRepository.delete()`, which now invokes this Edge Function rather than updating the table directly — see [member-management.md's Member Deletion Guard](./member-management.md#member-deletion-guard-closes-domain-model-reviewmds-member-deletion-finding) for the full design. This closes domain-model-review.md's open High finding.
+**Delete protection**: the `delete_member` RPC (called by the `delete-member` Edge Function) counts `subscription_items` referencing the member (as either `member_id` or `shared_member_id`) and blocks with a "used by X subscription/add-on record(s)" error before deleting; the foreign keys (no cascade) are the backstop. `MemberDetailPage`'s "Delete" button calls `memberRepository.delete()`, which invokes this Edge Function — see [member-management.md's Member Deletion Guard](./member-management.md#member-deletion-guard) for the full design.
 
-**Deletion (REQ-MEM-007)**: staff/admin can delete a member — plain soft delete (`deleted_at`/`deleted_by`, same standard columns as every other table), no separate "deactivate" state. Deleting a member never cascades to its `Subscription`/`SubscriptionItem`/`AuditLog` history, and frees its `phone` for reuse (the unique index above is scoped to `deleted_at is null`); `member_number` is never reused.
+**Deletion (REQ-MEM-007)**: staff/admin can delete a member for real, no separate "deactivate" state. A member that subscriptions use cannot be deleted (delete the checkouts first), so a delete never orphans a `Subscription`/`SubscriptionItem`. The row's last values stay in the `AuditLog`. It frees the member's `phone` for reuse; the per-branch `member_number` counter only ever increments, so a number is not reissued automatically. The member's photo files are removed with the row.
 
 ---
 
@@ -216,12 +212,11 @@ No `plan_id`, dates, quantity, or amount fields here — those live per line on 
 
 **Triggers**
 - `trg_subscriptions_audit` (`BEFORE INSERT OR UPDATE`) — `set_audit_fields()`.
-- `trg_subscriptions_no_hard_delete` (`BEFORE DELETE`) — `prevent_hard_delete()`.
 - `trg_subscriptions_audit_fields` (`AFTER INSERT OR UPDATE`) — `audit_row_changes()`.
 
 **Indexes**: `idx_subscriptions_member_id` — plain index on `member_id`.
 
-**Delete protection**: `trg_subscriptions_no_hard_delete` blocks a real `DELETE`. In practice `deleted_at` is never actually set on this table — no UI flow or RPC writes it — so it's currently a dead/unreachable column here, present only for shape-consistency with every other business table (also called out in §Open items).
+**Delete protection**: `delete_subscription` (called by the `delete-subscription` Edge Function) deletes the checkout's items, then the header, in one transaction, audited. There is no usage guard: nothing refers to a subscription.
 
 **Write path**: no direct client `insert`/`update` RLS policy exists at all — every write goes through two `security definer`, `service_role`-only RPCs: `create_subscription_with_items(p_caller_id, p_member_id, p_payment_mode, p_notes, p_items)` (atomic header + all line items in one transaction, called from `create-subscription`) and `update_subscription_header(p_caller_id, p_subscription_id, p_payment_mode, p_notes)` (correction-only header edit, called from `update-subscription`). Both use a per-transaction `set_config('request.jwt.claim.sub', ...)` trick so `set_audit_fields()`'s `auth.uid()` still attributes to the real caller despite running on the service-role connection.
 
@@ -247,14 +242,13 @@ No `status`, `refund_amount`, `cancellation_reason`, `cancelled_by`/`cancelled_a
 
 **Triggers**
 - `trg_subscription_items_audit` (`BEFORE INSERT OR UPDATE`) — `set_audit_fields()`.
-- `trg_subscription_items_no_hard_delete` (`BEFORE DELETE`) — `prevent_hard_delete()`.
 - `trg_subscription_items_audit_fields` (`AFTER INSERT OR UPDATE`) — `audit_row_changes()`.
 
-**Indexes**: `idx_subscription_items_subscription_id`, `idx_subscription_items_plan_id` — plain indexes. `idx_subscription_items_member_end` — composite partial index on `(member_id, end_date) where deleted_at is null`; `idx_subscription_items_shared_member_end` — composite partial on `(shared_member_id, end_date) where deleted_at is null and shared_member_id is not null`. Both back `member_current_items` (§Views) — a plain `current_date` comparison can't live inside a partial-index predicate (not `IMMUTABLE`), so these support an efficient `member_id = ? and end_date >= ?` range scan for each half of that view's `UNION ALL`, rather than baking the date filter into the index itself.
+**Indexes**: `idx_subscription_items_subscription_id`, `idx_subscription_items_plan_id` — plain indexes. `idx_subscription_items_member_end` — composite index on `(member_id, end_date)`; `idx_subscription_items_shared_member_end` — composite partial index on `(shared_member_id, end_date) where shared_member_id is not null`. Both back `member_current_items` (§Views) — a plain `current_date` comparison can't live inside a partial-index predicate (not `IMMUTABLE`), so these support an efficient `member_id = ? and end_date >= ?` range scan for each half of that view's `UNION ALL`, rather than baking the date filter into the index itself.
 
 **Named CHECK constraint**: `chk_subscription_item_shared_member_distinct` (`shared_member_id is null or shared_member_id <> member_id`).
 
-**Delete protection**: `trg_subscription_items_no_hard_delete` blocks a real `DELETE`. `plan_id`'s FK is explicitly declared `on delete restrict` (see Plan §3's deletion guard) — the one FK in the schema with an explicit `ON DELETE` clause.
+**Delete protection**: items are only ever deleted with their whole checkout (`delete_subscription`), never one at a time — they are immutable after creation. `plan_id`'s FK is explicitly declared `on delete restrict` (see Plan §3's deletion guard).
 
 **Write path**: no direct client `insert`/`update` RLS policy — read-only for `authenticated`. Rows are only ever inserted by `create_subscription_with_items()` (Subscription §5), inside the same transaction as their parent header. There is no update or cancel path for an existing line item at all, not even via RPC — the entire row is immutable post-creation except through the deferred cancellation design (§Open items).
 
@@ -281,11 +275,11 @@ Excludes logging changes to the audit-fields block itself (`created_at`/`created
 
 **Grouping related field changes**: all rows written by a single insert/update/delete share one `change_id`. Querying `WHERE change_id = '...'` returns exactly the set of fields that changed together in that one save.
 
-**Triggers**: `trg_audit_log_no_hard_delete` (`BEFORE DELETE`) — `prevent_hard_delete()`, same defense-in-depth as every other table. No `set_audit_fields`/`audit_row_changes` trigger is attached *to* `audit_log` itself — it doesn't audit itself (that would be circular); it's the sink every other table's own `audit_row_changes()` trigger writes into.
+**Triggers**: `trg_audit_log_no_hard_delete` (`BEFORE DELETE`) — `prevent_hard_delete()`: the audit log can never be deleted. No `set_audit_fields`/`audit_row_changes` trigger is attached *to* `audit_log` itself — it doesn't audit itself (that would be circular); it's the sink every other table's own `audit_row_changes()` trigger writes into, for inserts, updates and deletes.
 
 **Indexes**: `idx_audit_log_table_record` — composite on `(table_name, record_id)`, supports "full history for this specific row." `idx_audit_log_change_id` — on `change_id`, supports "every field that changed together in one save" (see grouping note above).
 
-**Delete protection**: no `deleted_at`/`deleted_by` columns at all (exempt from soft-delete by design — append-only, and even soft-deleting an entry would defeat its purpose); `trg_audit_log_no_hard_delete` blocks a real `DELETE`; no `insert`/`update`/`delete` RLS policy exists for any role — every row is written exclusively by the `security definer` `audit_row_changes()` trigger function running on other tables, never by a direct client or Edge Function write.
+**Delete protection**: append-only by design — a deleted record survives only as `delete` rows here (one per column, with its last values), so an editable or deletable entry would defeat the purpose; `trg_audit_log_no_hard_delete` blocks a real `DELETE`; no `insert`/`update`/`delete` RLS policy exists for any role — every row is written exclusively by the `security definer` `audit_row_changes()` trigger function running on other tables, never by a direct client or Edge Function write.
 
 **Named CHECK constraint**: `operation` — `CHECK IN ('insert', 'update', 'delete')`.
 
@@ -315,13 +309,13 @@ The four audit columns physically exist on this table (`database.md`'s DDL inclu
 
 **Indexes**: PK on `key`.
 
-**Delete protection**: **none at the database level** — no `deleted_at` column, and (unlike every business table above) no `prevent_hard_delete` trigger, so a real `DELETE` from a `service_role` connection is not structurally blocked. Since `member_number_start_sequence`/`member_number_increment`/`member_number_padding_width` are load-bearing for `generate_member_number()`, removing one of these three rows would break member creation with no DB-level guard against it.
+**Delete protection**: **none at the database level** — no `prevent_hard_delete` trigger, so a real `DELETE` from a `service_role` connection is not structurally blocked. Since `member_number_start_sequence`/`member_number_increment`/`member_number_padding_width` are load-bearing for `generate_member_number()`, removing one of these three rows would break member creation with no DB-level guard against it.
 
 **Validation**: `value` required. RLS: admin-only `select`/`update`; no `insert` policy at all (rows are migration-managed only, via seeded `ON CONFLICT (key) DO NOTHING`).
 
 ### `member_number_sequences`
 
-Internal per-branch counter backing `generate_member_number()` (Member §4) — one row per branch, for that branch's entire lifetime. **Not per-`(branch, year)`** — the counter increments continuously and never resets, including at a calendar-year boundary; only the *year embedded in the formatted `member_number` string* changes from one registration to the next, reflecting whenever that member actually registered. (This table was originally keyed by `(branch_id, year)`, resetting each branch's counter to `member_number_start_sequence` every year — changed by `20260727000000_member_number_continuous_sequence.sql` per an explicit product decision; REQ-MEM-005 updated to match.)
+Internal per-branch counter backing `generate_member_number()` (Member §4) — one row per branch, for that branch's entire lifetime. **Not per-`(branch, year)`** — the counter increments continuously and never resets, including at a calendar-year boundary; only the *year embedded in the formatted `member_number` string* changes from one registration to the next, reflecting whenever that member actually registered.
 
 | Field         | Type    | Nullable | Constraints |
 |---------------|---------|----------|-------------|
@@ -332,7 +326,7 @@ Internal per-branch counter backing `generate_member_number()` (Member §4) — 
 
 **Indexes**: PK on `branch_id` — also what the `ON CONFLICT` clause targets to make the counter bump atomic under concurrent inserts.
 
-**Delete protection**: no `deleted_at` column, no `prevent_hard_delete` trigger — there's no product concept of "deleting" a counter row. **RLS**: admin-only `select` (`member_number_sequences_select_admin`, added alongside the Member Numbering settings screen) — no `insert`/`update`/`delete` policy for any client role; writes only ever happen through the `security definer` `generate_member_number()` trigger or the service-role Edge Function above.
+**Delete protection**: no `prevent_hard_delete` trigger, but a counter row is deleted with its branch (`ON DELETE CASCADE` on `branch_id`) — there's no other product concept of "deleting" a counter row. **RLS**: admin-only `select` (`member_number_sequences_select_admin`, added alongside the Member Numbering settings screen) — no `insert`/`update`/`delete` policy for any client role; writes only ever happen through the `security definer` `generate_member_number()` trigger or the service-role Edge Function above.
 
 ---
 
@@ -350,8 +344,7 @@ select
   si.member_id, si.start_date, si.end_date, si.quantity, si.amount_paid
 from subscription_items si
 join plans p on p.id = si.plan_id
-where si.deleted_at is null
-  and (si.end_date is null or si.end_date >= current_date)
+where (si.end_date is null or si.end_date >= current_date)
 
 union all
 
@@ -362,7 +355,6 @@ select
 from subscription_items si
 join plans p on p.id = si.plan_id
 where si.shared_member_id is not null
-  and si.deleted_at is null
   and (si.end_date is null or si.end_date >= current_date);
 ```
 
@@ -485,7 +477,7 @@ erDiagram
 
 ## Input Types (client payload shapes)
 
-Passed from the client to Supabase Edge Functions (see [edge-functions.md](./edge-functions.md)) or, for the tables that still permit direct client writes, straight to `supabase-js` `.insert()` / `.update()`. Defined in `web/src/types/index.ts`. Audit fields (`created_at`/`created_by`/`changed_at`/`changed_by`) and soft-delete fields (`deleted_at`/`deleted_by`) are **never** included from the client, in either direction — see database.md's Audit Field Triggers and Soft Delete Enforcement.
+Passed from the client to Supabase Edge Functions (see [edge-functions.md](./edge-functions.md)) or, for the tables that still permit direct client writes, straight to `supabase-js` `.insert()` / `.update()`. Defined in `web/src/types/index.ts`. Audit fields (`created_at`/`created_by`/`changed_at`/`changed_by`) are **never** included from the client, in either direction — see database.md's Audit Field Triggers and Soft Delete Enforcement.
 
 ### NewMember / UpdateMember
 
@@ -567,7 +559,7 @@ Only the header's correction-only fields are editable. Line items (`Subscription
 
 ### InviteUser / UpdateProfile
 
-`InviteUser` (`email`, `full_name`, `roles`) drives the `invite-user` Edge Function, which assigns roles via `user_roles` directly (§1b) — there is no `role` column on `profiles` to set. `UpdateProfile` (`full_name?`, `roles?` admin-only, `is_active?` admin-only) is **not** a direct `supabase-js` update — `full_name`/`is_active` go through the `update_profile_fields` RPC and `roles` through `replace_user_roles` (§1a/§1b), both called from the `update-user` Edge Function (§1). Soft-deleting a profile (REQ-ADMIN-006) is a separate call to the `soft_delete_profile` RPC via the same Edge Function, admin-only, never on the caller's own row — see edge-functions.md §6.
+`InviteUser` (`email`, `full_name`, `roles`) drives the `invite-user` Edge Function, which assigns roles via `user_roles` directly (§1b) — there is no `role` column on `profiles` to set. `UpdateProfile` (`full_name?`, `roles?` admin-only, `is_active?` admin-only) is **not** a direct `supabase-js` update — `full_name`/`is_active` go through the `update_profile_fields` RPC and `roles` through `replace_user_roles` (§1a/§1b), both called from the `update-user` Edge Function (§1). There is no delete or restore for a profile: users are deactivated, never deleted.
 
 ---
 
@@ -577,6 +569,5 @@ Only the header's correction-only fields are editable. Line items (`Subscription
 - **Overlap-warning logic (REQ-SUB-005/008) is resolved, not deferred** — but deliberately *not* via the old `overlap_override`/`overlap_conflict_*` self-reference columns and server-side warn-then-allow flow. Instead it's a client-side-only check in the checkout form, with no schema footprint and no persisted trace of the warning firing — see [business-logic.md §Subscription Overlap Guard](./business-logic.md#subscription-overlap-guard-req-sub-005008). No data-model change needed for this.
 - Whether a dedicated global "all subscriptions" overview screen is needed (REQ-ADMIN-001) — doesn't change this data model either way.
 - `aadhaar_number` has no format/uniqueness constraint specified yet.
-- Whether soft-deleting an in-use plan/branch should still be blocked, now that soft-delete no longer risks breaking FK integrity — flagged as an explicit open item in edge-functions.md §5, current design keeps the hard-block guard.
 - `plans.max_members`'s `CHECK (IN 1, 2)` and `SubscriptionItem.shared_member_id`'s single-column (not join-table) design are a **stopgap**, not a confirmed permanent decision. Revisit (raise the cap and move `shared_member_id` to a real multi-member join table) only if/when a 3+-member plan is actually requested — deliberately not built preemptively.
 - The `member_current_items` view does not filter on `start_date` (see §Views) — confirm whether future-dated items should count as "current."

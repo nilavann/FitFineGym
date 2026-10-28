@@ -30,7 +30,7 @@ One row per Supabase Auth user (`auth.users`), linked 1:1. Reachable via either 
 | full_name  | text    | No       | —         |                                   |
 | is_active  | boolean | No       | `true`    |                                   |
 
-Plus the standard audit columns (`created_at`, `created_by`, `changed_at`, `changed_by`) and soft-delete columns (`deleted_at`, `deleted_by`) shared by every business table.
+Plus the standard audit columns (`created_at`, `created_by`, `changed_at`, `changed_by`) shared by every business table. There are no `deleted_at` / `deleted_by` columns: a user is never deleted, only deactivated.
 
 **Role is not a column here.** A user's role(s) live in `roles`/`user_roles` — an admin-managed
 catalog plus a many-to-many join table, so a user can hold more than one role. See
@@ -51,22 +51,17 @@ create table if not exists profiles (
   created_at  timestamptz not null default now(),
   created_by  uuid references profiles(id),
   changed_at  timestamptz,
-  changed_by  uuid references profiles(id),
-  deleted_at  timestamptz,
-  deleted_by  uuid references profiles(id)
+  changed_by  uuid references profiles(id)
 );
 ```
 
-No `on delete cascade` on the FK — unlike every other business table, this used to be the
-one exception to "hard delete is structurally impossible" (domain-model-review.md Critical
-#1). A Supabase Auth `admin.deleteUser()` call now fails outright with a foreign-key
-violation instead of cascading into a real `DELETE` on this row — deactivation (`is_active =
-false`) / soft-delete (`deleted_at`) remain the only supported ways to remove a user.
+No `on delete cascade` on the FK. A Supabase Auth `admin.deleteUser()` call fails outright with a foreign-key
+violation instead of cascading into a real `DELETE` on this row, and `prevent_hard_delete()` refuses a direct `DELETE` too —
+deactivation (`is_active = false`) is the only supported way to remove a user's access, so the profile and everything attributed to it stay.
 
 `profiles` also now gets the same `set_audit_fields`/`prevent_hard_delete`/`audit_row_changes`
-triggers every other table gets (database.md §Audit Field Triggers / §Soft Delete Enforcement
-/ §Field-Level Audit Trigger) — it was the one table missing all three
-(security-review-findings.md's High finding).
+triggers every other table gets (database.md §Audit Field Triggers / §Hard Delete Guards
+/ §Field-Level Audit Trigger) — it was once the one table missing all three.
 
 ### 2.1 Profile creation trigger
 
@@ -121,7 +116,7 @@ RLS is the actual enforcement layer for "is this session allowed to do anything"
 ```sql
 alter table profiles enable row level security;
 
--- Helper: is the current user active and non-deleted at all (admin or staff)?
+-- Helper: is the current user active at all (admin or staff)?
 create or replace function is_active_user()
 returns boolean
 language sql
@@ -131,7 +126,7 @@ set search_path = public
 as $$
   select exists (
     select 1 from profiles
-    where id = auth.uid() and is_active = true and deleted_at is null
+    where id = auth.uid() and is_active = true
   );
 $$;
 
@@ -140,30 +135,30 @@ $$;
 -- (`select is_admin_user(auth.uid())`), so it's still the right helper to call here.
 
 create policy "profiles_select_active_users" on profiles
-  for select using (is_active_user() and deleted_at is null);
+  for select using (is_active_user());
 
 -- A user can always read their OWN row, even if deactivated. Without this, a deactivated
 -- caller fails is_active_user() above and gets zero rows back, indistinguishable from
 -- "never invited" - the app needs to tell those two cases apart (REQ-AUTH-003's message
 -- vs. the deactivation message), so the self-lookup can't itself depend on being active.
 create policy "profiles_select_self" on profiles
-  for select using (auth.uid() = id and deleted_at is null);
+  for select using (auth.uid() = id);
 
 create policy "profiles_update_admin" on profiles
-  for update using (is_active_admin() and deleted_at is null);
+  for update using (is_active_admin());
 create policy "profiles_update_self_name" on profiles
-  for update using (auth.uid() = id and deleted_at is null) with check (auth.uid() = id);
+  for update using (auth.uid() = id) with check (auth.uid() = id);
 
 -- The self-update policy above only checks row ownership, not which columns change —
 -- RLS alone can't express "this column only." A column-level grant is what actually
--- restricts a self-update to full_name, keeping is_active/deleted_at admin-only:
+-- restricts a self-update to full_name, keeping is_active admin-only:
 revoke update on profiles from authenticated;
 grant update (full_name) on profiles to authenticated;
 ```
 
 `is_active_user()` / `is_active_admin()` gate every RLS policy on every table in the app, not just `profiles` — this applies identically no matter which sign-in method was used to obtain the session (REQ-AUTH-004).
 
-**Deactivated or soft-deleted users are blocked everywhere immediately**, not just at login: every policy gates on `is_active_user()` / `is_active_admin()`, so a deactivated or deleted account's existing session immediately loses read/write access on its next request even if the client-side session token is still technically valid.
+**Deactivated users are blocked everywhere immediately**, not just at login: every policy gates on `is_active_user()` / `is_active_admin()`, so a deactivated account's existing session immediately loses read/write access on its next request even if the client-side session token is still technically valid.
 
 ---
 
@@ -184,7 +179,7 @@ Every flow below is handled entirely by the Supabase Auth client SDK — **no Ed
   2. Query `profiles` for `id = session.user.id` (RLS-gated by `profiles_select_active_users`, §3 above).
   3. If no `profiles` row is found: call `supabase.auth.signOut()` immediately, and show "This email hasn't been invited — contact your admin." The Supabase Auth session must never be allowed to persist past this check.
 - No Edge Function creates a `profiles` row for Google sign-in — the **only** path that creates one is `invite-user` via `handle_new_auth_user()` (§2.1).
-- `is_active_user()` / `is_active_admin()` already gate every RLS policy on `is_active = true and deleted_at is null` — this applies identically no matter which sign-in method was used.
+- `is_active_user()` / `is_active_admin()` already gate every RLS policy on `is_active = true` — this applies identically no matter which sign-in method was used.
 
 ### 4.3 Password reset (REQ-AUTH-005)
 

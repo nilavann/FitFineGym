@@ -37,9 +37,9 @@ export const profileRepository = {
 
   /** Every active user — feeds the handled_by_staff *picker* specifically (you shouldn't be
    * able to newly assign a deactivated staffer). For resolving an already-stored
-   * created_by/handled_by_staff id to a display name, use getAllNonDeleted() instead — a
-   * deactivated (but not deleted) staffer's past attributions shouldn't render as "Unknown"
-   * just because they can no longer be picked for a new one (member-detail.md §12). */
+   * created_by/handled_by_staff id to a display name, use getAll() instead — a deactivated
+   * staffer's past attributions shouldn't render as "Unknown" just because they can no longer be
+   * picked for a new one (member-detail.md §12). */
   async getAllActive(): Promise<Profile[]> {
     const { data, error } = await supabase
       .from('profiles_with_roles')
@@ -50,11 +50,10 @@ export const profileRepository = {
     return (data ?? []) as unknown as Profile[];
   },
 
-  /** Every non-deleted user regardless of is_active — for resolving created_by/handled_by_staff
-   * ids to display names without a deactivated staffer's history looking like "Unknown".
-   * `profiles_select_active_users` RLS only requires the CALLER to be active; it doesn't filter
-   * the target row on is_active, only deleted_at, so this is already reachable without a new grant. */
-  async getAllNonDeleted(): Promise<Profile[]> {
+  /** Every user regardless of is_active — for resolving created_by/handled_by_staff ids to display
+   * names without a deactivated staffer's history looking like "Unknown". `profiles_select_active_users`
+   * RLS only requires the CALLER to be active; it doesn't filter the target row on is_active. */
+  async getAll(): Promise<Profile[]> {
     const { data, error } = await supabase
       .from('profiles_with_roles')
       .select('id, full_name, roles, is_active')
@@ -64,10 +63,9 @@ export const profileRepository = {
   },
 
   /** Users, WITH email — Manage Users list (screens.md WSCR-09). Admin-only, via list-users
-   * (edge-functions.md §5). Pass includeDeleted to also get soft-deleted users, for the
-   * Restore flow — each row's deleted_at tells the caller which are which. */
-  async getAllUsers(includeDeleted = false): Promise<ManagedUser[]> {
-    const { data, error } = await supabase.functions.invoke('list-users', { body: { include_deleted: includeDeleted } });
+   * (edge-functions.md §5). Every user is listed, deactivated ones included: users are never deleted. */
+  async getAllUsers(): Promise<ManagedUser[]> {
+    const { data, error } = await supabase.functions.invoke('list-users', { body: {} });
     if (error) throw new Error(await extractFunctionErrorMessage(error));
     return (data?.users ?? []) as ManagedUser[];
   },
@@ -83,18 +81,6 @@ export const profileRepository = {
     const { data: updated, error } = await supabase.functions.invoke('update-user', { body: { user_id: id, ...data } });
     if (error) throw await toEdgeFunctionError(error);
     return updated as Profile;
-  },
-
-  /** Soft-deletes a user (REQ-ADMIN-006) — distinct from deactivation, never on the caller's own account. */
-  async delete(id: string): Promise<void> {
-    const { error } = await supabase.functions.invoke('update-user', { body: { user_id: id, delete: true } });
-    if (error) throw await toEdgeFunctionError(error);
-  },
-
-  /** Reverses a soft-delete, clearing deleted_at/deleted_by so the user reappears in Manage Users. */
-  async restore(id: string): Promise<void> {
-    const { error } = await supabase.functions.invoke('update-user', { body: { user_id: id, restore: true } });
-    if (error) throw await toEdgeFunctionError(error);
   },
 };
 

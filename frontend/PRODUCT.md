@@ -26,7 +26,7 @@ Used at a real gym's front desk (desktop or tablet) for daily registration/renew
 
 - Member lifecycle: add, edit, view detail (personal details, body metrics, photo), search/filter/sort a members list.
 - Subscription lifecycle: renew/add subscriptions and add-on items per member, view subscription history; no client-side trust for `end_date` or overlap enforcement — see architecture.md's Server-Side Authority table.
-- Master data: Plans, Branches, Roles are admin-managed catalogs with usage-guarded delete (soft delete, blocked if in use).
+- Master data: Plans, Branches, Roles are admin-managed catalogs with usage-guarded delete (a real delete, blocked if in use).
 - Users & roles: multi-role assignment (not single admin/staff enum), admin invite flow via Supabase Auth email invite, self-protection rules (an admin cannot change their own role/active state).
 - Reporting: summary tiles (total/active/expiring/expired members), expiring-this-week list, date-range-scoped earnings/transaction detail — no revenue breakdown beyond what's specified in [spec/frontend/reporting.md](../spec/frontend/reporting.md).
 - Audit log: append-only, field-level change history, view-only, admin-only.

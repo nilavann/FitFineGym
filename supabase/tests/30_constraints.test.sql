@@ -154,7 +154,7 @@ begin
   end loop;
 end $$;
 
--- chk_branches_code_format: no '-', no wildcard, at most 10 characters (F28).
+-- chk_branches_code_format: no '-', no wildcard, at most 10 characters.
 do $$
 declare v text;
 begin

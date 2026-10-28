@@ -9,8 +9,8 @@ import type { CreateMemberResponse, Member, NewMember, NewMemberPhoto, UpdateMem
 // a literal it can see at the call site, not a runtime string constant.
 
 /**
- * Reads and edits are direct RLS-guarded queries; create, delete and purge go through Edge
- * Functions (member-management.md §7). `member_number`/`created_by` are never sent; `branch_id`
+ * Reads and edits are direct RLS-guarded queries; create and delete go through Edge Functions
+ * (member-management.md §7). `member_number`/`created_by` are never sent; `branch_id`
  * is never sent on update — see NewMember/UpdateMember (types/member.ts) for why those aren't
  * even accepted as inputs.
  */
@@ -59,26 +59,15 @@ export const memberRepository = {
   },
 
   /**
-   * Soft delete only (REQ-MEM-007) — never a real DELETE, database.md enforces this at the
-   * trigger level too. Routed through the delete-member Edge Function (not a direct update
-   * like create/update above) because this is the one member write that needs an
-   * authoritative, server-side usage guard — see member-management.md §9.
+   * Deletes the member for real (REQ-MEM-007) and removes their photo files; it cannot be undone.
+   * Routed through the delete-member Edge Function (not a direct delete like the reads above)
+   * because it needs an authoritative, server-side usage guard: a member that subscription items
+   * use (as member or shared member) is refused with 409 MEMBER_IN_USE — delete those
+   * subscriptions first. See member-management.md §9.
    */
   async delete(id: number): Promise<void> {
     const { error } = await supabase.functions.invoke('delete-member', { body: { member_id: id } });
     if (error) throw await toEdgeFunctionError(error);
-  },
-
-  /**
-   * Permanent delete (REQ-MEM-008) — the one real DELETE in the app, system admin only.
-   * Erases the member, their subscriptions, items, audit history and photo files; cannot be
-   * undone. `purge-member` re-checks the caller server-side, so the UI gate is UX only.
-   * Resolves `photosRemoved: false` when the rows are gone but the files could not be removed.
-   */
-  async purge(id: number): Promise<{ photosRemoved: boolean }> {
-    const { data, error } = await supabase.functions.invoke('purge-member', { body: { member_id: id } });
-    if (error) throw await toEdgeFunctionError(error);
-    return { photosRemoved: data?.photos_removed !== false };
   },
 };
 

@@ -23,7 +23,7 @@ No new tables — reuses `auth.users` + `profiles`. Two sign-in methods, one ide
   2. Query `profiles` for `id = session.user.id` (RLS-gated by `profiles_select_active_users`, which already requires `is_active_user()` — so an uninvited account's query returns zero rows, since no matching profile exists to satisfy that check in the first place... except the *check itself* is what's missing for a brand-new Google sign-in with no `profiles` row at all. In that case the query simply returns no row, which is what step 3 checks for).
   3. If no `profiles` row is found: call `supabase.auth.signOut()` immediately, and show "This email hasn't been invited — contact your admin." The Supabase Auth session must never be allowed to persist past this check.
 - No Edge Function creates a `profiles` row for Google sign-in — the **only** path that creates a `profiles` row is `invite-user` (below) via `handle_new_auth_user()`.
-- `is_active_user()` / `is_active_admin()` (database.md) already gate every RLS policy on `is_active = true and deleted_at is null` — this applies identically no matter which sign-in method was used to obtain the session.
+- `is_active_user()` / `is_active_admin()` (database.md) already gate every RLS policy on an active profile that holds a role — this applies identically no matter which sign-in method was used to obtain the session.
 
 ### Password reset (REQ-AUTH-005)
 - `supabase.auth.resetPasswordForEmail(email, { redirectTo })` — handled entirely by the Supabase Auth client SDK, no Edge Function involved (same as password sign-in, no privileged operation needed).
@@ -39,10 +39,10 @@ Read and edit remain a **direct client write** (RLS-guarded `members_update_acti
 
 - **`member_number` is never client-supplied.** The client omits it entirely from the insert payload; `generate_member_number()` (database.md) always overwrites whatever is sent, same pattern as the audit columns.
 - **Required-field / conditional validation (REQ-MEM-001)** is enforced twice: client-side for instant feedback (missing-field messages naming the field, "doctor's care details required when under_doctor_care = true"), and server-side via the `not null` column constraints plus `chk_doctor_care_details_required` in database.md (which rejects a blank/whitespace-only value, not just `NULL`) — a request that bypasses the client entirely (e.g. a forged direct API call) still gets rejected by Postgres.
-- **Phone uniqueness (REQ-MEM-001/006)**: enforced by `idx_members_phone_active` (database.md), a unique index scoped to `deleted_at is null`. A duplicate insert/update is rejected by Postgres with a unique-violation, which the client surfaces as a validation error naming the conflict — same enforcement shape as `member_number`'s uniqueness, just not server-generated.
+- **Phone uniqueness (REQ-MEM-001/006)**: enforced by `idx_members_phone` (database.md), a unique index. A duplicate insert/update is rejected by Postgres with a unique-violation, which the client surfaces as a validation error naming the conflict — same enforcement shape as `member_number`'s uniqueness, just not server-generated.
 - **Photo compression (REQ-MEM-002/004)** stays client-side (browser canvas). At registration the original and the thumbnail travel with the member in the `create-member` request, and the function stores them and records the paths. Member Detail's retry/replace still uploads straight to Storage and saves the paths with a normal member update (a follow-up may move it to a function that reuses the same photo-storage module).
-- **Deletion (REQ-MEM-007)**: staff/admin can delete a member, via the `delete-member` Edge Function — not a direct client update like create/read/edit above, and not admin-only like `delete-plan`/`delete-branch` below (any active user qualifies, matching REQ-MEM-007). It counts non-deleted `subscription_items` referencing the member (`member_id` or `shared_member_id`); if any exist, it blocks with `Cannot delete — used by ${count} subscription/add-on record(s)` (409), same "used by X" shape as Plan/Branch. Otherwise it soft-deletes (`deleted_at`/`deleted_by`) via the service-role client. See [member-management.md's Member Deletion Guard](./member-management.md#member-deletion-guard-closes-domain-model-reviewmds-member-deletion-finding) for the full design; this closes domain-model-review.md's Member-deletion High finding. The now-freed `phone` becomes available to a new member via the partial unique index above.
-- **Member-number sequence configuration (admin-only, operational, not a REQ-MEM item)**: `update-member-number-sequence` lets an admin retarget a specific branch's counter — one counter per branch, continuous for that branch's whole lifetime, never reset (not even at a calendar-year boundary). Admin-only (`is_admin_user`, same bar as Plan/Branch/Role management). Given `{ branch_id, next_sequence }`, it walks `next_sequence` forward by `member_number_increment` (read from `configuration`) until it finds a value that has never been issued as a `member_number` at that branch **in any year** — checked against every `member_number` starting with that branch's code, with no `deleted_at` filter, since member numbers are never reused (REQ-MEM-007) — then stores `last_sequence = <found> - increment` so the next real registration's own arithmetic produces exactly that value. Returns the value actually applied plus whether it differs from what was requested. See [member-management.md §3.1](./member-management.md#31-admin-configuration-member-numbering-screen) for the full design, and [../frontend/screens.md WSCR-16](../frontend/screens.md#wscr-16--member-numbering) for the screen.
+- **Deletion (REQ-MEM-007)**: staff/admin can delete a member, via the `delete-member` Edge Function — not a direct client delete (clients hold no `DELETE` grant), and not admin-only like `delete-plan`/`delete-branch` below (any active user qualifies, matching REQ-MEM-007). `delete_member` counts the `subscription_items` referencing the member (`member_id` or `shared_member_id`); if any exist it blocks with `Cannot delete — used by ${count} subscription/add-on record(s)` (409, `MEMBER_IN_USE`), same "used by X" shape as Plan/Branch. Otherwise it deletes the row for real, and the function then removes the member's photo files from storage. See [member-management.md's Member Deletion Guard](./member-management.md#member-deletion-guard) for the full design. The now-freed `phone` is available to a new member.
+- **Member-number sequence configuration (admin-only, operational, not a REQ-MEM item)**: `update-member-number-sequence` lets an admin retarget a specific branch's counter — one counter per branch, continuous for that branch's whole lifetime, never reset (not even at a calendar-year boundary). Admin-only (`is_admin_user`, same bar as Plan/Branch/Role management). Given `{ branch_id, next_sequence }`, it walks `next_sequence` forward by `member_number_increment` (read from `configuration`) until it finds a value no member currently holds as a `member_number` at that branch **in any year** — checked against every `member_number` starting with that branch's code (a deleted member no longer holds its number, so the walk can land on it; the automatic counter never does) — then stores `last_sequence = <found> - increment` so the next real registration's own arithmetic produces exactly that value. Returns the value actually applied plus whether it differs from what was requested. See [member-management.md §3.1](./member-management.md#31-admin-configuration-member-numbering-screen) for the full design, and [../frontend/screens.md WSCR-16](../frontend/screens.md#wscr-16--member-numbering) for the screen.
 
 ### `create-member`
 `supabase/functions/create-member/index.ts`, structured per [edge-function-structure.md](./edge-function-structure.md) (entity code in `_entities/member/`); tests `_tests/create-member.test.ts`, `member-entity.test.ts`, SQL `tests/55_member_create.test.sql`. Any active user (staff or admin).
@@ -50,7 +50,7 @@ Read and edit remain a **direct client write** (RLS-guarded `members_update_acti
 - **Request**: `multipart/form-data` (415 otherwise), at most 6.1 MiB (413). Parts: `member` (JSON, required), `original` and `thumbnail` (image files, both or neither). Any other part is a 400, like an unknown JSON field. The `member` fields mirror the `chk_members_*` constraints: `name`, `phone`, `date_of_birth`, `date_of_joining`, `gender`, `weight_kg`, `height_cm`, `under_doctor_care`, `emergency_contact_name/_phone/_relationship`, `branch_id`, and optionally `doctor_care_details` (required, non-blank, when `under_doctor_care`), `email`, `residential_address`, `pincode`, `aadhaar_number`, `occupation`, `handled_by_staff`. `member_number`, `created_by`, the audit columns and the photo paths are not fields: sending one is a 400.
 - **Photo parts**: `image/jpeg`, `image/png` or `image/webp`, not empty, `original` at most 5 MiB (the bucket's limit) and `thumbnail` at most 1 MiB. Checked before anything is written.
 - **Order**: valid JWT → active caller (`access_of`, 403 otherwise) → read and validate the form (400 / 413 / 415) → `create_member(caller, member)` → if a photo came: upload both files to `member-photos` at paths the function builds (`<member_id>/original-<ts>.jpg`, `<member_id>/thumbnail-<ts>.jpg`) → `set_member_photo(caller, member_id, original, thumbnail)`.
-- **`create_member`** (service role, `act_as(caller)`): refuses a branch that is missing or deleted and a `handled_by_staff` that is not an active user (400), and a phone already used by a live member (409, `idx_members_phone_active`). The trigger generates `member_number`; `created_by` is the caller.
+- **`create_member`** (service role, `act_as(caller)`): refuses a branch that does not exist and a `handled_by_staff` that is not an active user (400), and a phone already used by another member (409, `idx_members_phone`). The trigger generates `member_number`; `created_by` is the caller.
 - **Response**: `201 { member, photo_error }`. `member` is built field by field (no audit columns). `photo_error` is `null`, or `"PHOTO_UPLOAD_FAILED"` when the member was saved but the photo could not be stored: the files that landed are removed, no paths are recorded, and the failure is logged. A photo failure is never an error response, because the member exists and a retry of the whole request would only meet its own phone number (REQ-MEM-004).
 - **Errors** (`{ error, code }`): 400 `MEMBER_INVALID_REFERENCE`, 409 `MEMBER_PHONE_IN_USE`; validation failures are 400 without a code. The client switches on `code`, never on the message.
 - **Not enforced here**: the insert grant and `members_insert_active_users` policy on `fitfine.members` are unchanged, so a direct insert by a signed-in user is still possible; the constraints and triggers apply to it either way. Removing that path is a separate decision.
@@ -64,10 +64,10 @@ Read and edit remain a **direct client write** (RLS-guarded `members_update_acti
 The **only** write path for `subscriptions`/`subscription_items` — RLS grants no direct client insert on either table (database.md §RLS). Creates the header and every line item together, in one transaction; there is no separate function to add an item to an existing subscription later (REQ-SUB-001 — a new checkout always means a new `subscriptions` row).
 
 Responsibilities, in order:
-1. Verify caller is an authenticated, active, non-deleted user (`is_active_user()`, from JWT).
+1. Verify caller is an authenticated, active user (`is_active_user()`, from JWT).
 2. Validate the payload has at least one item, and **exactly one** item references a `category = 'membership'` plan — reject otherwise.
 3. For each item:
-   a. Look up the plan (`duration_days`, `price`, `category`, `max_members`) — must not be soft-deleted (`deleted_at is null`); a soft-deleted plan can no longer be selected, even though existing items referencing it keep working.
+   a. Look up the plan (`duration_days`, `price`, `category`, `max_members`) — the plan must exist; a plan that was deleted can no longer be selected (and a plan any item uses cannot be deleted at all).
    b. Validate `quantity` (REQ-SUB-009): must be a positive integer when the plan has a duration; reject a quantity on an indefinite item (`duration_days is null`). The preset chips (×1/×2/×3/×6/×12) are a client-side UX affordance only — the server accepts any positive integer from the custom field too.
    c. Compute `end_date` = `null` when `plan.duration_days is null`, else `start_date + (plan.duration_days × quantity) - 1`.
    d. Compute default `amount_paid = plan.price × quantity` if the client didn't override it; either way, persist whatever `amount_paid` the client submits.
@@ -85,27 +85,28 @@ Header-only edits: `payment_mode`, `notes`. Line items (`subscription_items`) ha
 
 ## 4. Admin Catalog Management (Plans, Branches, Roles)
 
-All three follow the same shape: direct RLS-guarded `supabase-js` update for admins, but deletion is a soft-delete with a usage guard.
+All three follow the same shape: direct RLS-guarded `supabase-js` insert/update for admins, but deletion goes through a function that runs a usage guard and deletes for real, in one transaction.
 
 ### `delete-plan` (REQ-ADMIN-002)
 
 Covers both `category = 'membership'` and `category = 'addon'` rows — one function for the whole unified catalog (there is no separate `delete-addon` anymore).
 1. Verify caller is an active admin.
-2. Count `subscription_items` referencing `plan_id` where `deleted_at is null`.
-3. If count > 0 → block with "used by X subscription(s)".
-4. Else `UPDATE plans SET deleted_at = now(), deleted_by = auth.uid()`.
-
-**Open item, flagged not resolved:** soft delete removes the *technical* reason for this guard — a soft-deleted plan's row still exists, so a `SubscriptionItem`'s `plan_id` FK never breaks and historical items still display the plan's name via the join. The guard above is kept purely as a *product* safeguard (avoid quietly pulling an in-use item out of the picker while people still hold it). Worth confirming with product whether that's still wanted, or whether soft-deleting an in-use plan should simply be allowed (existing items unaffected either way).
+2. `delete_plan` locks the plan row, then counts `subscription_items` referencing `plan_id`.
+3. If count > 0 → block with "used by X subscription(s)" (409).
+4. Else `DELETE FROM plans` (attributed to the caller; the audit trigger records the last values). `subscription_items.plan_id` is `ON DELETE RESTRICT`, so the guard cannot be skipped.
 
 ### `delete-branch` (extends REQ-ADMIN-003)
-Same pattern, counting `members` rows referencing `branch_id`. Same open item applies.
+Same pattern, counting `members` rows referencing `branch_id`. The branch's `member_number_sequences` counter row is deleted with it (`ON DELETE CASCADE`), since it exists only for that branch.
 
 ### `delete-role`
-Same pattern, counting `user_roles` rows referencing `role_id` (regardless of whether those users are active — mirrors `delete-plan`'s existence check, not an active-only count). No open item here in the same sense as plan/branch: unlike a soft-deleted plan, a soft-deleted role is filtered out of `roles_select_active_users` (database.md §RLS) and so can no longer be assigned, which is exactly the product intent for a role type nobody should pick anymore.
+Same pattern, counting `user_roles` rows referencing `role_id` (regardless of whether those users are active). A role that nobody holds is deleted for real.
+
+### `delete-subscription`
+Staff/admin. Body `{ subscription_id }`. `delete_subscription` locks the header, deletes its `subscription_items`, then the header, in one transaction (404 if it does not exist). There is no usage guard: nothing refers to a subscription. The audit trigger writes a `delete` row per column for the header and for each item, attributed to the caller. It is how a mistaken checkout is undone, and it is what lets a member that has subscriptions be deleted afterwards.
 
 ---
 
-## 5. User Management (REQ-ADMIN-004/006)
+## 5. User Management (REQ-ADMIN-004)
 
 Role is no longer a `profiles` column — it's a many-to-many via `roles`/`user_roles`
 (database.md §Role Assignment), so every function below deals in `roles: string[]`, not a
@@ -117,7 +118,7 @@ one shared source of truth instead of five copies of the same check.
 **Gap filled by this revision:** `profiles` has no `email` column by design (§2.2 — login identity is owned entirely by `auth.users`), but WSCR-09's list needs every user's email, not just the caller's own (the only one readable client-side via `session.user.email`). Reading other users' emails requires the Admin API, which requires the service role — so this needs its own Edge Function; it cannot be a direct RLS-guarded `supabase-js` read the way the rest of `profiles` is.
 1. Verify caller is an active admin (`is_admin_user`).
 2. Call `supabase.auth.admin.listUsers()` (paginated — loop until a page returns fewer than the page size) to get every `auth.users` row's `id`/`email`.
-3. Query `profiles_with_roles` (database.md §Views) for every non-deleted row (`deleted_at is null`).
+3. Query `profiles_with_roles` (database.md §Views) for every profile.
 4. Join the two by `id` in memory and return `{ id, email, full_name, roles, is_active }[]`, sorted by `full_name`. A `profiles` row with no matching `auth.users` entry (shouldn't happen in practice — every `profiles` row is created from an `auth.users` row) is skipped rather than erroring.
 
 ### `invite-user`
@@ -129,9 +130,9 @@ one shared source of truth instead of five copies of the same check.
 ### `update-user`
 1. Verify caller is an active admin.
 2. Allows editing `full_name`, `roles`, `is_active` on any `profiles` row **except** the caller's own `roles`/`is_active` — "an admin cannot deactivate their own account" generalizes here to "an admin cannot change their own roles or `is_active` from this function at all." A caller editing their own `full_name` only (no `roles`/`is_active` in the payload) is allowed.
-3. When `roles` is supplied, calls `replace_user_roles` (database.md §Role Assignment) — a single-transaction delete-then-insert, not a plain `.update()`, since `user_roles` grants no direct client write at all. `full_name`/`is_active` edits and the soft-delete below similarly go through `update_profile_fields`/`soft_delete_profile` rather than a plain `.update()` — now that `profiles` has `set_audit_fields()` attached (database.md §Audit Field Triggers), those RPCs are what let `changed_by`/`deleted_by` correctly attribute to the acting admin instead of resolving `NULL` under the service-role connection.
-4. **Last-admin lockout (new in this revision, closing an item previously flagged open in domain-model-review.md)**: before removing the admin role from a user, deactivating (`is_active = false`), or soft-deleting (`{ delete: true }`) a user, checks whether the target is currently the last active admin (`is_admin_user` + `count_other_active_admins`) and blocks with a 409 if so. This applies regardless of whose account it is — not just a self-protection rule — since two different admins could otherwise still lock everyone out between them.
-5. **Soft-deleting a user (REQ-ADMIN-006, `deleted_at`)** is a separate, more severe action than `is_active = false`, requested via `{ delete: true }` on this same function rather than a separate one: `is_active` is a reversible toggle (REQ-ADMIN-004's existing "edit active status"), while `deleted_at` fully hides the account from `User Management`'s list. Same self-protection rule applies — an admin cannot soft-delete their own account, and deleting is independent of deactivating (neither requires the other first).
+3. When `roles` is supplied, calls `replace_user_roles` (database.md §Role Assignment) — a single-transaction delete-then-insert, not a plain `.update()`, since `user_roles` grants no direct client write at all. `full_name`/`is_active` edits similarly go through `update_profile_fields` rather than a plain `.update()` — now that `profiles` has `set_audit_fields()` attached (database.md §Audit Field Triggers), that RPC is what lets `changed_by` correctly attribute to the acting admin instead of resolving `NULL` under the service-role connection.
+4. **Last-admin lockout**: before removing the admin role from a user or deactivating (`is_active = false`) a user, checks whether the target is currently the last active admin (`is_admin_user` + `count_other_active_admins`) and blocks with a 409 if so. This applies regardless of whose account it is — not just a self-protection rule — since two different admins could otherwise still lock everyone out between them.
+5. **Users are never deleted (REQ-ADMIN-006 is retired).** There is no `delete` or `restore` field: a request carrying one is a 400. `is_active` is the reversible toggle that removes a user's access, and the profile, its roles and every `created_by` / `handled_by_staff` / audit reference stay, so the user still shows by name on past work.
 6. **Why this is an Edge Function, not a direct `supabase-js` update (correcting screens.md WSCR-09's earlier "Submit flow" note):** `profiles_update_admin` (database.md §RLS) grants `for update using (is_active_admin())` with no row-level restriction excluding the caller's own id — RLS alone cannot express "any admin row except this session's own," since `USING`/`WITH CHECK` only see the row being written, not "is this auth.uid() = id." Enforcing the self-protection rule server-side (not just as a disabled control in the UI, which a direct API call bypasses trivially) requires this Edge Function to compare `callerId` against the target `user_id` explicitly.
 
 ---
@@ -140,7 +141,7 @@ one shared source of truth instead of five copies of the same check.
 
 ### `get-report-data`
 Read-only. Verify caller is an active user (reports are available to staff too, not admin-only, per REQ-REPORT-001's business rule). Accepts `start_date`/`end_date`, returns:
-- Monthly membership-item counts, bucketed by `subscription_items.start_date` joined to `plans` where `category = 'membership'`, `deleted_at is null`.
+- Monthly membership-item counts, bucketed by `subscription_items.start_date` joined to `plans` where `category = 'membership'`.
 - Monthly add-on-item counts, same shape, `category = 'addon'`.
 - The itemized transaction list (REQ-REPORT-002): one row per `subscription_items` row in range, joined to `subscriptions` (for `payment_mode`), `members`, and `plans` (for `name`/`category`, to label the row Subscription vs Add-on).
 
@@ -154,17 +155,13 @@ No Edge Function strictly required for this (it's read-only and RLS already perm
 
 Read-only, admin-only, no Edge Function needed — `audit_log_select_admin` (database.md) already grants admins direct `select` access, filterable client-side or via query params on `table_name`, `record_id`, `changed_at` range, and `changed_by`. There is no write path from any client role at all (see database.md §RLS) — every row is written exclusively by `audit_row_changes()`.
 
-**Implemented**: `frontend/src/pages/AuditLogPage.tsx` (`/audit-log`, admin-only, reached from the Settings hub's Data Management grid — see [screens.md WSCR-14](../frontend/screens.md)), backed by `frontend/src/repositories/audit-log.repository.ts`. Filters by table name (dropdown, one of the actually-audited tables), record id (text), date range (defaults to current-month-to-date, same convention as Reports), and changed-by (dropdown of users, reusing `profileRepository.getAllUsers()` — no new query needed). Capped at 500 rows per filter set with a "narrow your filters" notice if exceeded, since this EAV table's growth is unbounded (domain-model-review.md). Strictly view-only — no edit/delete control anywhere on the screen, matching REQ-ADMIN-005's acceptance criteria.
+**Implemented**: `frontend/src/pages/AuditLogPage.tsx` (`/audit-log`, admin-only, reached from the Settings hub's Data Management grid — see [screens.md WSCR-14](../frontend/screens.md)), backed by `frontend/src/repositories/audit-log.repository.ts`. Filters by table name (dropdown, one of the actually-audited tables), record id (text), date range (defaults to current-month-to-date, same convention as Reports), and changed-by (dropdown of users, reusing `profileRepository.getAllUsers()` — no new query needed). Capped at 500 rows per filter set with a "narrow your filters" notice if exceeded, since this EAV table's growth is unbounded. Strictly view-only — no edit/delete control anywhere on the screen, matching REQ-ADMIN-005's acceptance criteria.
 
 ---
 
-## 7.1 Permanent member delete (REQ-MEM-008) and the reserved `system_admin` role (REQ-ADMIN-010)
+## 7.1 No reserved roles
 
-### `purge-member`
-`supabase/functions/purge-member/index.ts`; tests `_tests/functions.test.ts` (purge-member section) and `member-entity.test.ts`. Body `{ member_id }` (positive integer). Order: valid JWT → `is_system_admin_user(caller)` (403 otherwise) → `purge_member(caller, member_id)` → remove the returned photo paths **and every file under the member's `<member_id>/` folder** from the `member-photos` bucket (replaced photos leave old files behind). Errors: 404 member not found, 409 "Cannot purge — …" (shared member on another member's subscription), 500 otherwise. A storage failure after the purge still returns 200 with `photos_removed: false` (rows are already gone; retrying would only 404) and is logged with the paths.
-
-### Reserved-role guards in existing functions
-`invite-user` refuses `system_admin` unless the caller is a system admin, and requires `admin` alongside it. `delete-role` refuses the `system_admin` role (403). `update-user` maps `replace_user_roles()`'s reserved-role errors to 403 / 400.
+The reserved `system_admin` role (REQ-ADMIN-010) was removed: its permanent member delete (`purge-member`, REQ-MEM-008) went when members became really deletable, and nothing else needed it. `invite-user`, `delete-role` and `update-user` carry no special case for any role name, and `requireCaller` has two levels, `active` and `admin`.
 
 ---
 
@@ -173,22 +170,22 @@ Read-only, admin-only, no Edge Function needed — `audit_log_select_admin` (dat
 | Rule | Enforced in | REQ |
 |---|---|---|
 | Member required fields / doctor's-care-details conditional | DB constraints (database.md) + client UX | REQ-MEM-001 |
-| Member phone uniqueness (among non-deleted members) | `idx_members_phone_active` (database.md) | REQ-MEM-001/006 |
+| Member phone uniqueness | `idx_members_phone` (database.md) | REQ-MEM-001/006 |
 | `member_number` generation | `generate_member_number()` trigger, never client-set | REQ-MEM-005 |
-| Member deletion, no usage guard, no cascade | Plain RLS-guarded update (no Edge Function) | REQ-MEM-007 |
+| Member deletion: blocked while subscription items use the member, photos removed, audited | `delete-member`, `delete_member()`, foreign keys without cascade | REQ-MEM-007 |
+| A checkout (items, then header) can be deleted; audited | `delete-subscription`, `delete_subscription()` | REQ-SUB-001 |
 | Subscription requires exactly one membership item | `create-subscription` | REQ-SUB-001 |
 | Shared member only for `max_members = 2` membership items, set at creation only | `create-subscription` | REQ-SUB-004 |
 | Indefinite item — hard block on repeat attachment | `create-subscription` | REQ-SUB-007 |
 | Quantity multiplier (duration & price) | `create-subscription` | REQ-SUB-009 |
-| Plan/branch/role soft-delete usage guard | `delete-plan` / `delete-branch` / `delete-role` | REQ-ADMIN-002/003 |
+| Plan/branch/role delete usage guard | `delete-plan` / `delete-branch` / `delete-role` | REQ-ADMIN-002/003 |
 | Admin cannot self-demote/deactivate | `update-user` | REQ-ADMIN-004 |
-| Admin cannot self-delete; user deletion independent of deactivation | `update-user` | REQ-ADMIN-006 |
-| Cannot remove/deactivate/delete the last active admin (any target, not just self) | `update-user`, `replace_user_roles` (database.md) | REQ-ADMIN-004/006 |
+| Users are never deleted, only deactivated; `delete`/`restore` are not accepted | `update-user` (unknown field → 400), no `DELETE` grant, `prevent_hard_delete()` on `profiles` | REQ-ADMIN-006 |
+| Cannot remove or deactivate the last active admin (any target, not just self) | `update-user`, `update_profile_fields`, `replace_user_roles` (database.md) | REQ-ADMIN-004 |
 | A user can hold more than one role, assigned via `user_roles` — no client role has direct write access to it | `replace_user_roles` (service_role only, database.md) | REQ-ADMIN-004 |
 | Other users' emails require the Admin API (service role), not a `profiles` column | `list-users` | REQ-ADMIN-004 |
 | Google sign-in invite-only, no auto-created profile | `AuthContext` post-OAuth check | REQ-AUTH-003 |
 | Password reset, non-leaking, works for Google-only accounts too | Supabase Auth client SDK, no Edge Function | REQ-AUTH-005 |
-| Only a system admin can purge a member; `system_admin` cannot be granted/removed by an ordinary admin, edited or deleted | `purge-member`, `purge_member()`, `replace_user_roles()`, `invite-user`, `delete-role`, `protect_system_admin_role()` | REQ-MEM-008, REQ-ADMIN-010 |
-| No hard delete, ever — the single exception is `purge_member()` | `prevent_hard_delete()` trigger, all tables; bypassed only by the transaction-local `app.purge_member` flag that `purge_member()` sets, and only on the four tables it erases | REQ-MEM-008 |
-| Soft-deleted rows excluded from every read | RLS `deleted_at is null` + query convention | — |
+| Every delete is audited; the audit log and users can never be deleted | the audit trigger fires on `DELETE`; `prevent_hard_delete()` on `audit_log` and `profiles` | REQ-AUDIT-001 |
+| No soft-delete flag: no table has `deleted_at`, so no read filters on one | schema | — |
 | **Deferred**: overlap warnings, quantity reduction, cancellation/refund | Not implemented — see domain-model.md §Open items | REQ-SUB-005/008/010/011 |

@@ -102,21 +102,21 @@ create function t.uid(p_name text) returns uuid language sql immutable as $$
   select ('f17f1e00-0000-4000-8000-' || lpad(
     case p_name
       when 'nop'      then '1' when 'inactive' then '2' when 'norole' then '3'
-      when 'staff'    then '4' when 'admin'    then '5' when 'sysadmin' then '6'
-      when 'deleted'  then '7' when 'staff2'   then '8' when 'admin2' then '9'
+      when 'staff'    then '4' when 'admin'    then '5' when 'admin3'   then '6'
+      when 'staff2'   then '8' when 'admin2' then '9'
     end, 12, '0'))::uuid
 $$;
 
 create function t.role_id(p_name text) returns smallint language sql stable as $$
-  select id from fitfine.roles where name = p_name and deleted_at is null
+  select id from fitfine.roles where name = p_name
 $$;
 
 create function t.branch(p_code text) returns bigint language sql stable as $$
-  select id from fitfine.branches where code = p_code and deleted_at is null
+  select id from fitfine.branches where code = p_code
 $$;
 
 create function t.plan(p_name text) returns bigint language sql stable as $$
-  select id from fitfine.plans where name = p_name and deleted_at is null
+  select id from fitfine.plans where name = p_name
 $$;
 
 -- An invited auth user, the way GoTrue's invite creates one: invited_at set, the invite metadata in
@@ -150,8 +150,8 @@ declare
   v_s1 bigint;
 begin
   insert into fitfine.roles (name, description)
-  select r, 'test fixture' from unnest(array['admin', 'staff', 'system_admin']) r
-  where not exists (select 1 from fitfine.roles x where x.name = r and x.deleted_at is null);
+  select r, 'test fixture' from unnest(array['admin', 'staff']) r
+  where not exists (select 1 from fitfine.roles x where x.name = r);
 
   insert into fitfine.configuration (key, value) values
     ('member_number_start_sequence', '1'), ('member_number_increment', '1'), ('member_number_padding_width', '4')
@@ -159,16 +159,14 @@ begin
 
   -- nop: an uninvited sign-up, so no profile at all.
   insert into auth.users (id, email) values (t.uid('nop'), 'nop@fitfine.test');
-  perform t.invite('sysadmin', array['admin', 'system_admin']);
-  perform t.invite('admin',    array['admin'],  t.uid('sysadmin'));
-  perform t.invite('admin2',   array['admin'],  t.uid('sysadmin'));
+  perform t.invite('admin3',   array['admin']);
+  perform t.invite('admin',    array['admin'],  t.uid('admin3'));
+  perform t.invite('admin2',   array['admin'],  t.uid('admin3'));
   perform t.invite('staff',    array['staff'],  t.uid('admin'));
   perform t.invite('staff2',   array['staff'],  t.uid('admin'));
   perform t.invite('inactive', array['staff'],  t.uid('admin'));
-  perform t.invite('deleted',  array['staff'],  t.uid('admin'));
   perform t.invite('norole',   array[]::text[], t.uid('admin'));
   update fitfine.profiles set is_active = false where id = t.uid('inactive');
-  update fitfine.profiles set deleted_at = now() where id = t.uid('deleted');
 
   -- TAB starts with TA: set_member_number_sequence must keep the two apart.
   insert into fitfine.branches (name, code) values ('Test Branch A', 'TA'), ('Test Branch AB', 'TAB');

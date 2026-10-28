@@ -1,7 +1,6 @@
--- Table policies (spec/migration/phase-2-plan.md §2.2, Task 6). Same rules as the source, with
--- three changes: every policy is TO authenticated, the helpers are wrapped in (select ...) so
+-- Table policies. Every policy is TO authenticated, the helpers are wrapped in (select ...) so
 -- Postgres evaluates them once per statement, and the write policies pair with the column grants
--- of Task 3. No table has a DELETE policy. RLS stays enabled, not forced.
+-- of the grants migration. No table has a DELETE policy. RLS stays enabled, not forced.
 --
 -- "Active": a profile that is active and not deleted, holding at least one non-deleted role
 -- (fitfine_private.access_of).

@@ -1,6 +1,6 @@
--- Schemas and grants (spec/migration/phase-2-plan.md §2.1, §2.2, Task 3). Closed by default:
--- everything is revoked first, then each privilege is granted by name. RLS is already enabled
--- on every table and no policy exists yet, so these grants open nothing until Task 6.
+-- Schemas and grants. Closed by default: everything is revoked first, then each privilege is
+-- granted by name. RLS is already enabled on every table and no policy exists yet, so these
+-- grants open nothing until the policies migration.
 --
 -- Nobody but the owner (postgres) ever holds DELETE, TRUNCATE, REFERENCES or TRIGGER on a table.
 -- Inserting into an identity column needs no grant on its sequence, so no sequence is granted.
@@ -65,7 +65,7 @@ grant update (
 ) on fitfine.members to authenticated;
 
 -- service_role bypasses RLS. Plain reads and writes only: every write it makes on a caller's
--- behalf goes through a SECURITY DEFINER function in fitfine (Task 8).
+-- behalf goes through a SECURITY DEFINER function in fitfine (the API functions migration).
 grant select, insert, update on
   fitfine.profiles, fitfine.branches, fitfine.plans, fitfine.roles, fitfine.user_roles,
   fitfine.members, fitfine.subscriptions, fitfine.subscription_items,

@@ -16,7 +16,7 @@
 | REQ-MEM-004 | Client-side photo compression; both original and thumbnail stored |
 | REQ-MEM-005 | System-generated `member_number`, per-branch/per-year sequence |
 | REQ-MEM-006 | Edit any field except `member_number`/`created_by` |
-| REQ-MEM-007 | Soft-delete only; phone freed for reuse, `member_number` never reused |
+| REQ-MEM-007 | Real delete behind a usage guard; phone freed for reuse, `member_number` counter never goes backwards |
 | REQ-LIST-001 | Default sort `date_of_joining desc`; sort by name or expiry |
 | REQ-LIST-002 | Search by name/member_number/phone |
 | REQ-LIST-003 | Status pills: All/Active/Expiring/Expired |
@@ -55,16 +55,14 @@ create table if not exists members (
   created_by                      uuid references profiles(id),
   changed_at                      timestamptz,
   changed_by                      uuid references profiles(id),
-  deleted_at                      timestamptz,
-  deleted_by                      uuid references profiles(id),
   constraint chk_doctor_care_details_required check (
     under_doctor_care = false or (doctor_care_details is not null and length(trim(doctor_care_details)) > 0)
   )
 );
 
-create unique index if not exists idx_members_number_active on members(member_number) where deleted_at is null;
--- Uniqueness only among live rows - a soft-deleted member's phone can be reused (REQ-MEM-001/006/007).
-create unique index if not exists idx_members_phone_active on members(phone) where deleted_at is null;
+create unique index if not exists idx_members_number on members(member_number);
+-- A deleted member's row is gone, so its phone can be reused (REQ-MEM-001/006/007).
+create unique index if not exists idx_members_phone on members(phone);
 create index if not exists idx_members_branch_id on members(branch_id);
 ```
 
@@ -108,7 +106,7 @@ begin
     return new;
   end if;
 
-  select code into v_branch_code from branches where id = new.branch_id and deleted_at is null;
+  select code into v_branch_code from branches where id = new.branch_id;
   if v_branch_code is null then
     raise exception 'branch_id % does not reference an active branch', new.branch_id;
   end if;
@@ -133,7 +131,7 @@ create trigger trg_members_generate_number
   for each row execute function generate_member_number();
 ```
 
-Sequence increments continuously per branch, for that branch's entire lifetime, and **never resets** — including at a calendar-year boundary. `v_year` is still computed and still embedded in the formatted string (so `member_number` always shows the year a member actually registered), but the counter itself is keyed by `branch_id` alone. (This table/trigger was originally keyed by `(branch_id, year)`, resetting every branch's counter to `member_number_start_sequence` each year — revised by `20260727000000_member_number_continuous_sequence.sql` per an explicit product decision; REQ-MEM-005 updated to match, see §3.1's Global Settings for the still-tunable `configuration` keys.)
+Sequence increments continuously per branch, for that branch's entire lifetime, and **never resets** — including at a calendar-year boundary. `v_year` is still computed and still embedded in the formatted string (so `member_number` always shows the year a member actually registered), but the counter itself is keyed by `branch_id` alone. See §3.1's Global Settings for the tunable `configuration` keys.
 
 **A failed insert can't leak a sequence bump.** The counter increment runs inside this `BEFORE INSERT` trigger, in the same statement/transaction as the row insert. Postgres validates `NOT NULL`/`CHECK`/`UNIQUE` constraints only *after* all `BEFORE ROW` triggers finish — so if the row is then rejected (e.g. `chk_doctor_care_details_required`, phone uniqueness), the whole statement aborts and rolls back everything it did, including the nested write to `member_number_sequences`. The only residual gap risk is a benign concurrency artifact (a rolled-back insert whose claimed number was already skipped past by a concurrent successful one) — acceptable for a display identifier.
 
@@ -143,9 +141,9 @@ Sequence increments continuously per branch, for that branch's entire lifetime, 
 
 The generation algorithm above is fully automatic and per-branch-independent by design (`member_number_sequences` is keyed by `branch_id` alone — Branch A's counter has never been able to affect Branch B's) — what was missing was any way for an admin to *see* or *adjust* that state, since `member_number_sequences` had zero RLS policies for any client role and the three `configuration` keys had no dedicated screen. The **Member Numbering** admin screen (`/member-numbering`, [frontend/screens.md WSCR-16](../frontend/screens.md#wscr-16--member-numbering)) closes that gap:
 
-- **Global settings** (`member_number_start_sequence`, `member_number_increment`, `member_number_padding_width`): read is a direct RLS-guarded `select` on `configuration` (`configuration_select_admin`, no new grant needed). Write goes through `update_member_number_config(p_start_sequence, p_increment, p_padding_width)` — a `security invoker` RPC that updates all three rows in one statement/transaction, so a save is genuinely all-or-nothing (each `UPDATE` inside it still runs as the calling admin and is individually gated by the existing `configuration_update_admin` policy, same as three separate client calls would be — the function only removes the "partially applied on failure" risk three independent `.update()` calls had, closing a gap found in a later CRUD-flow audit, [crud-review.md](../crud-review.md)). Changing these only affects *future* numbers; past `member_number` values are never recalculated (same principle as editing a Plan not recalculating past `SubscriptionItem` rows).
-- **Per-branch sequences**: a new `member_number_sequences_select_admin` RLS policy (`20260726000000_member_number_sequences_admin_select.sql`) lets an admin view every active branch's current counter — one per branch, since the counter never resets — alongside each branch's next number-to-be-issued (computed client-side: `last_sequence + increment`, or `start_sequence` if no row exists yet for that branch). Writes still don't go through this policy directly — see below. There is no year selector on this screen: since the counter is continuous, there's only ever one current value per branch to look at, not one per year.
-- **Editing a branch's next number**: the `update-member-number-sequence` Edge Function (admin-only). Takes `{ branch_id, next_sequence }` and treats `next_sequence` as a *target*: since `member_number` is never reused (REQ-MEM-007) even after a soft delete, and the counter no longer resets per year, it checks whether that sequence value has ever been issued at that branch **in any year** (fetching every `member_number` starting with that branch's code, with no `deleted_at` filter, and comparing the trailing sequence portion), and if so walks forward by `member_number_increment` until it finds one that hasn't — capped at 10,000 attempts as a safety valve, not an expected path at this app's scale. It then stores `last_sequence = <found value> - increment`, so the next real registration's own `last_sequence + increment` arithmetic lands exactly on the found value. The response reports whether the applied value differs from what was requested, so the UI can surface "150 was already used — set to 153 instead" rather than silently substituting a different number than the admin asked for.
+- **Global settings** (`member_number_start_sequence`, `member_number_increment`, `member_number_padding_width`): read is a direct RLS-guarded `select` on `configuration` (`configuration_select_admin`, no new grant needed). Write goes through `update_member_number_config(p_start_sequence, p_increment, p_padding_width)` — a `security invoker` RPC that updates all three rows in one statement/transaction, so a save is genuinely all-or-nothing (each `UPDATE` inside it still runs as the calling admin and is individually gated by the existing `configuration_update_admin` policy, same as three separate client calls would be — the function only removes the "partially applied on failure" risk three independent `.update()` calls had). Changing these only affects *future* numbers; past `member_number` values are never recalculated (same principle as editing a Plan not recalculating past `SubscriptionItem` rows).
+- **Per-branch sequences**: the `member_number_sequences_select_admin` RLS policy lets an admin view every active branch's current counter — one per branch, since the counter never resets — alongside each branch's next number-to-be-issued (computed client-side: `last_sequence + increment`, or `start_sequence` if no row exists yet for that branch). Writes still don't go through this policy directly — see below. There is no year selector on this screen: since the counter is continuous, there's only ever one current value per branch to look at, not one per year.
+- **Editing a branch's next number**: the `update-member-number-sequence` Edge Function (admin-only). Takes `{ branch_id, next_sequence }` and treats `next_sequence` as a *target*: since the counter no longer resets per year, it checks whether that sequence value is held by a member at that branch **in any year** (reading every `member_number` starting with that branch's code and comparing the trailing sequence portion). A member that was deleted no longer holds its number, so an explicit setting can hand it out again; the automatic counter never does, and if so walks forward by `member_number_increment` until it finds one that hasn't — capped at 10,000 attempts as a safety valve, not an expected path at this app's scale. It then stores `last_sequence = <found value> - increment`, so the next real registration's own `last_sequence + increment` arithmetic lands exactly on the found value. The response reports whether the applied value differs from what was requested, so the UI can surface "150 was already used — set to 153 instead" rather than silently substituting a different number than the admin asked for.
 
 No new Requirement ID was added to `requirements-template.md` for this admin screen itself — it's an operational capability over an existing, already-specified mechanism (REQ-MEM-005), not a new product requirement changing how members register. REQ-MEM-005's own wording *was* revised, separately, when the counter's reset behavior changed (see §3 above).
 
@@ -158,17 +156,17 @@ alter table members                 enable row level security;
 alter table member_number_sequences enable row level security;
 
 create policy "members_select_active_users" on members
-  for select using (is_active_user() and deleted_at is null);
+  for select using (is_active_user());
 create policy "members_insert_active_users" on members
   for insert with check (is_active_user());
 create policy "members_update_active_users" on members
-  for update using (is_active_user() and deleted_at is null);
+  for update using (is_active_user());
 
 -- member_number_sequences: no policy for any client role - only the
 -- SECURITY DEFINER generate_member_number() trigger touches this table.
 ```
 
-No admin/staff distinction — **any active user can create, read, and edit members** (Section 1's role model: staff can "add/edit members"). Read and plain-field edits stay direct RLS-gated updates under `members_update_active_users` — no Edge Function needed for those. Create goes through the `create-member` Edge Function, which stores the photo in the same request (see [edge-functions.md §2](./edge-functions.md#2-members)). Deletion (REQ-MEM-007) is the one exception — it now goes through a guarded Edge Function; see [Member Deletion Guard](#member-deletion-guard-closes-domain-model-reviewmds-member-deletion-finding) near the end of this doc.
+No admin/staff distinction — **any active user can create, read, and edit members** (Section 1's role model: staff can "add/edit members"). Read and plain-field edits stay direct RLS-gated updates under `members_update_active_users` — no Edge Function needed for those. Create goes through the `create-member` Edge Function, which stores the photo in the same request (see [edge-functions.md §2](./edge-functions.md#2-members)). Deletion (REQ-MEM-007) is the one exception — it now goes through a guarded Edge Function; see [Member Deletion Guard](#member-deletion-guard) near the end of this doc.
 
 ---
 
@@ -176,7 +174,7 @@ No admin/staff distinction — **any active user can create, read, and edit memb
 
 ### 5.1 Why this is needed
 
-Before the Subscription/SubscriptionItem split, "a member's status" meant reading one `end_date` off their single latest `subscriptions` row. That row no longer exists — a member's current items are now the union of every non-deleted `subscription_items` row across every `subscriptions` checkout they're part of (`member_current_items`, [domain-model.md §Views](./domain-model.md#views)). REQ-LIST-001/003/004 still describe "latest subscription" as if it were one row; this view is the concrete resolution business-logic.md's Member Status section proposed but left unconfirmed: **status derives from the member's `category = 'membership'` item(s) in `member_current_items`, using whichever has the latest `end_date`.**
+Before the Subscription/SubscriptionItem split, "a member's status" meant reading one `end_date` off their single latest `subscriptions` row. That row no longer exists — a member's current items are now the union of every `subscription_items` row across every `subscriptions` checkout they're part of (`member_current_items`, [domain-model.md §Views](./domain-model.md#views)). REQ-LIST-001/003/004 still describe "latest subscription" as if it were one row; this view is the concrete resolution business-logic.md's Member Status section proposed but left unconfirmed: **status derives from the member's `category = 'membership'` item(s) in `member_current_items`, using whichever has the latest `end_date`.**
 
 The view's job is narrow and deliberate: expose exactly the columns the Member List screen (REQ-LIST-001–004) needs, pre-joined, so the frontend never has to hand-roll this multi-item aggregation itself.
 
@@ -196,8 +194,8 @@ select
   current_membership.plan_name as current_membership_plan_name,
   current_membership.end_date  as current_membership_end_date,
   coalesce(current_addons.addon_plan_ids, '{}') as current_addon_plan_ids,
-  m.photo_url  -- appended last, not next to photo_thumbnail_url — see the migration's
-               -- own comment: CREATE OR REPLACE VIEW can only add columns at the end
+  m.photo_url  -- appended last, not next to photo_thumbnail_url:
+               -- CREATE OR REPLACE VIEW can only add columns at the end
 from members m
 left join lateral (
   select mci.plan_id, mci.plan_name, mci.end_date
@@ -213,14 +211,13 @@ left join lateral (
   where mci.member_id = m.id
     and mci.category = 'addon'
 ) current_addons on true
-where m.deleted_at is null;
 ```
 
-> **Amended by `20261024000000_member_list_view_latest_membership.sql`:** the `current_membership_*` columns now come from the member's latest non-deleted `membership` item (own or shared) **including ended ones**, instead of `member_current_items`. So `NULL` means the member never had a membership (client status "No plans"), and a past `end_date` means "Expired". Add-on ids are still current-only. The SQL above shows the original definition.
+> **Current definition:** the `current_membership_*` columns come from the member's latest `membership` item (own or shared) **including ended ones**, instead of `member_current_items`. So `NULL` means the member never had a membership (client status "No plans"), and a past `end_date` means "Expired". Add-on ids are still current-only. The SQL above is a simplified illustration; the view in `supabase/migrations/` is the definition.
 
 A plain view (no `security definer`) — like `member_current_items`, it inherits and enforces the querying user's own RLS against `members`/`subscription_items`/`plans` automatically; it adds no new permission surface.
 
-**`photo_url`** (added `20260721000000_member_list_view_photo_url.sql`, alongside the original `photo_thumbnail_url`) feeds the Members List's photo lightbox ([frontend/member-management.md §3.4](../frontend/member-management.md#34-members-list)): clicking a row's thumbnail avatar enlarges the *original*, uncompressed photo, not the thumbnail already on screen. Cheap to include for every row — it's a URL string, not image bytes; the browser only fetches the actual original image when the lightbox opens and the `<img>` element's `src` is set.
+**`photo_url`** (alongside `photo_thumbnail_url`) feeds the Members List's photo lightbox ([frontend/member-management.md §3.4](../frontend/member-management.md#34-members-list)): clicking a row's thumbnail avatar enlarges the *original*, uncompressed photo, not the thumbnail already on screen. Cheap to include for every row — it's a URL string, not image bytes; the browser only fetches the actual original image when the lightbox opens and the `<img>` element's `src` is set.
 
 **No new indexes needed.** Postgres inlines the view definitions during planning, so the LATERAL subqueries ultimately scan `subscription_items` filtered by `member_id`/`shared_member_id`, which is exactly what `idx_subscription_items_member_end` and `idx_subscription_items_shared_member_end` ([database.md](./database.md)) already support. This comfortably meets the `<1s for up to ~2,000 members` NFR (requirements-template.md §10).
 
@@ -273,13 +270,13 @@ function deriveStatus(row):
 
 ## 7. Business Rules
 
-- **Phone uniqueness** (REQ-MEM-001/006): `idx_members_phone_active`, scoped to `deleted_at is null` — a duplicate insert/update is rejected by Postgres with a unique-violation, surfaced by the client as a validation error naming the conflict. A deleted member's phone becomes available immediately.
+- **Phone uniqueness** (REQ-MEM-001/006): `idx_members_phone` — a duplicate insert/update is rejected by Postgres with a unique-violation, surfaced by the client as a validation error naming the conflict. A deleted member's phone becomes available immediately.
 - **Doctor's-care conditional** (REQ-MEM-001): enforced twice — client-side for instant feedback, and server-side via `chk_doctor_care_details_required`, which requires a non-blank (post-`trim`) value, not just non-`NULL` — so a forged direct API call sending `doctor_care_details = ''` is rejected too, not only one omitting the field entirely.
 - **`member_number` immutability** (REQ-MEM-005/006): trigger-generated at insert; on update, `generate_member_number()` (§3) actively pins it back to `old.member_number` regardless of what an update payload contains — the same DB-level guarantee `created_by` gets from `set_audit_fields()`, not just an "the client never sends it" convention.
 - **`branch_id` immutability** (REQ-MEM-005/006): a registration-time fact, not an ongoing editable field — `generate_member_number()` (§3) pins it back to `old.branch_id` on every update, in the same trigger and for the same reason as `member_number` above, so the branch code embedded in `member_number` can never drift out of sync with a member's `branch_id`.
 - **`created_by` immutability** (REQ-MEM-003): standard audit trigger, set once on insert, never touched by `set_audit_fields()`'s `before update` path.
 - **`handled_by_staff` independence** (REQ-MEM-003): a plain, directly-editable column — any active user can set it on `insert` (via `members_insert_active_users`) or `update` it via the normal `members_update_active_users` policy; it has no relationship to `created_by`/`changed_by` beyond sharing the `profiles` FK target. There was never a DB-level restriction against setting it at creation — the frontend originally chose to omit it from the create payload (see `NewMember`'s type comment history) and default it in afterward from Member Detail instead; that was purely a frontend UX decision, reversed to default it from the logged-in session directly on the Add Member form, no schema/RLS change needed either way.
-- **Soft delete only** (REQ-MEM-007): `update members set deleted_at = now(), deleted_by = :caller where id = :id`, guarded by a usage check first — see [Member Deletion Guard](#member-deletion-guard-closes-domain-model-reviewmds-member-deletion-finding) below. `Subscription`/`SubscriptionItem`/`AuditLog` rows referencing a deleted member are retained unchanged (deleting a member with none is unaffected by the guard, since it only blocks when something references it), and `member_current_items` keeps including them (it has no `members.deleted_at` filter of its own) — **`member_list_view` is what actually hides a deleted member from the list**, via its own `where m.deleted_at is null`.
+- **Real delete, behind a usage guard** (REQ-MEM-007): `delete_member` removes the row (and clears any item-less header), guarded by a usage check first — see [Member Deletion Guard](#member-deletion-guard) below. A member that any `SubscriptionItem` refers to cannot be deleted at all, so no `Subscription`/`SubscriptionItem` row is ever left pointing at a missing member; delete the subscriptions first (`delete-subscription`). The `AuditLog` rows about the member are retained, plus a `delete` row per field with its last values. A member's photos are removed from storage with the row.
 - **Photo handling** (REQ-MEM-002/004): compression happens entirely client-side (browser canvas). At registration the original and the compressed thumbnail (~400px/<50KB) are sent with the member to `create-member`, which uploads them to Storage at paths it builds and records `photo_url` / `photo_thumbnail_url` through `set_member_photo`. If the photo can't be stored, the member still saves and the response says so (`photo_error`) — see [edge-functions.md §2](./edge-functions.md#2-members). Retrying or replacing a photo from Member Detail still uploads straight to Storage and updates the member.
 - **Read and edit need no Edge Function** — direct RLS-guarded `supabase-js` calls, as [edge-functions.md §2](./edge-functions.md#2-members) documents. Create (`create-member`) and delete (`delete-member`) are the exceptions.
 
@@ -300,7 +297,7 @@ create policy "member_photos_update_active_users" on storage.objects
   for update using (bucket_id = 'member-photos' and is_active_user());
 ```
 
-**Private bucket, gated read** — this supersedes an earlier public-bucket design (still what this section said until now): object keys are `{memberId}/original-{timestamp}.jpg` / `{memberId}/thumbnail-{timestamp}.jpg`, and sequential bigint member IDs are trivially enumerable, so a fully public bucket meant anyone with a guessed URL could view any member's photo with no session at all. `20260723000000_member_photos_private_bucket.sql` closed this (security-review-findings.md's Medium finding) by flipping `public = false` and gating `select` behind the same `is_active_user()` check the write/update policies already used, plus adding `file_size_limit`/`allowed_mime_types` (bundled in as a Low-priority fix to the same row).
+**Private bucket, gated read** — object keys are `{memberId}/original-{timestamp}.jpg` / `{memberId}/thumbnail-{timestamp}.jpg`, and sequential bigint member IDs are trivially enumerable, so a fully public bucket meant anyone with a guessed URL could view any member's photo with no session at all. The bucket is therefore `public = false`, with `select` gated behind the same `is_active_user()` check as the write/update policies, plus `file_size_limit` and `allowed_mime_types`.
 
 Because a private object has no public URL, `members.photo_url`/`photo_thumbnail_url` changed meaning: they now store a bucket-relative **path**, not a URL. The frontend (`frontend/src/lib/photo-urls.ts`) resolves that path to a short-lived signed URL (`createSignedUrl`) right after fetching member rows, called from both `memberListRepository.getAll()` and `memberRepository.getById()` — a signed URL itself can't be persisted since it expires, so only the stable path is stored. `MembersListPage.tsx`/`MemberDetailPage.tsx`/`PhotoLightbox.tsx` needed no changes for this — they just render whatever string they're given, same as before. Any photo uploaded before this migration had a full public URL stored instead of a bare path; the migration backfills those rows with a regex strip down to the bare path.
 
@@ -316,7 +313,7 @@ Because a private object has no public URL, `members.photo_url`/`photo_thumbnail
 | REQ-MEM-004 | `photo_url`/`photo_thumbnail_url` columns; `member-photos` bucket (§8); compression itself is client-side |
 | REQ-MEM-005 | `generate_member_number()` trigger + `member_number_sequences` + `configuration` (§3) |
 | REQ-MEM-006 | `members_update_active_users` RLS policy; `generate_member_number()` (§3) pins `member_number`/`branch_id` back to their original values on every update; `created_by` pinned by `set_audit_fields()` |
-| REQ-MEM-007 | Guarded soft-delete via `delete-member` Edge Function (used-by-X-subscriptions check, then update); `idx_members_phone_active`'s partial-unique scoping frees the phone |
+| REQ-MEM-007 | Guarded delete via `delete-member` Edge Function (used-by-X-subscriptions check, then `delete`, then photo cleanup); the row is gone, which frees the phone |
 | REQ-LIST-001 | `member_list_view` ordered by `date_of_joining desc` by default; `name`/`current_membership_end_date` available for the other sort options |
 | REQ-LIST-002 | `member_list_view.name`/`.phone`/`.member_number`, `ilike` substring match |
 | REQ-LIST-003 | `deriveStatus()` (§6) over `current_membership_plan_id`/`current_membership_end_date` |
@@ -324,19 +321,18 @@ Because a private object has no public URL, `members.photo_url`/`photo_thumbnail
 
 ---
 
-## Member deletion guard (closes domain-model-review.md's Member deletion finding)
+## Member deletion guard
 
-Plan and Branch ([master-data-management.md](./master-data-management.md) §5) both block deletion of a row still referenced elsewhere, via a dedicated Edge Function. Member originally had no equivalent — a plain client-side `update members set deleted_at = now(), deleted_by = auth.uid()`, RLS-gated the same as any other edit, with no usage check at all. That gap is closed: deleting a member with any non-deleted `subscription_items` row referencing it (as either `member_id` or `shared_member_id`) is now blocked, same "used by X" shape as Plan/Branch.
+Plan and Branch ([master-data-management.md](./master-data-management.md) §5) both block deletion of a row still referenced elsewhere, via a dedicated Edge Function; Member works the same way. Deleting a member that any `subscription_items` row refers to (as either `member_id` or `shared_member_id`) is blocked, same "used by X" shape as Plan/Branch, and the foreign keys (no cascade) back it up.
 
-**`delete-member` Edge Function** (`supabase/functions/delete-member/index.ts`):
-1. Authenticates the caller via the `Authorization` header (same pattern as every other Edge Function in this app).
-2. Checks the caller is an active, non-deleted user — **not admin-only**, unlike `delete-plan`/`delete-branch`, since REQ-MEM-007 is staff/admin. `is_active_user()` can't be called from this function's service-role client (it reads `auth.uid()`, which is `NULL` here), so this checks `profiles.is_active`/`deleted_at` directly for the caller's id instead.
-3. Counts non-deleted `subscription_items` where `member_id = :id or shared_member_id = :id`. If any exist, returns 409: `Cannot delete — used by ${count} subscription/add-on record(s)`.
-4. Otherwise performs the same soft-delete update as before, just now via the service-role client instead of the caller's own RLS-gated session.
+**`delete-member` Edge Function** (`supabase/functions/delete-member/index.ts`, entity code in `_entities/member/`):
+1. Authenticates the caller from the JWT and requires an active user — **not admin-only**, unlike `delete-plan`/`delete-branch`, since REQ-MEM-007 is staff/admin.
+2. Calls `delete_member(caller, id)` (service role, `act_as(caller)`), which in one transaction locks the member row, counts `subscription_items` where `member_id = :id or shared_member_id = :id` (409 `Cannot delete — used by ${count} subscription/add-on record(s)`, code `MEMBER_IN_USE`), clears an item-less header if one is left, deletes the row, and returns the stored photo paths. The audit trigger writes one `delete` row per column.
+3. Removes the member's photo files from storage (everything under `<member_id>/`, nothing outside it). The rows are already gone and can't come back, so a storage failure is logged and reported (`photos_removed: false`), never turned into an error.
 
-The frontend (`memberRepository.delete`, `frontend/src/repositories/member.repository.ts`) now calls this function instead of updating `members` directly — the only member-write path that goes through an Edge Function, mirroring `planRepository.delete`/`branchRepository.delete`'s shape exactly (including surfacing the guard's message verbatim on the member detail screen).
+The frontend (`memberRepository.delete`, `frontend/src/repositories/member.repository.ts`) calls this function and surfaces the guard's message verbatim on the member detail screen.
 
-This guard is deliberately Edge-Function-level, not a DB trigger/constraint — consistent with Plan/Branch, and for the same reason ([edge-functions.md §4](./edge-functions.md#4-plan-management-req-admin-002)): simpler than adding `ON DELETE RESTRICT`-style enforcement to a soft-delete model, at negligible race-window cost for a low-frequency, human-confirmed action.
+The guard lives in the function (so it can name the count) and in the foreign keys (so nothing can skip it). Because the check and the delete run in one transaction with the row locked, a checkout created at the same moment either lands first (and blocks the delete) or fails to find the member.
 
 ---
 

@@ -10,7 +10,7 @@ import {
   text, textOrNull, uuid,
 } from '../../_shared/validate.ts';
 
-/** delete-member and purge-member: which member. */
+/** delete-member: which member. */
 export const memberIdRequest = object({ member_id: id() });
 export type MemberIdRequest = Parsed<typeof memberIdRequest>;
 
@@ -131,17 +131,11 @@ export interface CreateMemberResponse {
 
 export interface DeleteMemberResponse {
   success: true;
-}
-
-export interface PurgeMemberResponse {
-  success: true;
-  /** false when the rows are gone but some photos could not be removed (logged, to clean up by hand). */
+  /** false when the row is gone but some photos could not be removed (logged, to clean up by hand). */
   photos_removed: boolean;
 }
 
-/** What fitfine.purge_member returns: the stored photo paths and how many rows went with the member. */
-export interface PurgeResult {
+/** What fitfine.delete_member returns: the photo paths the row held. */
+export interface DeleteResult {
   photo_paths: string[];
-  subscriptions: number;
-  items: number;
 }

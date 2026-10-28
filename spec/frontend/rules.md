@@ -64,7 +64,7 @@ These apply to **every screen that fetches data**, not just the ones that happen
 
 29. **Three distinct, non-overlapping states: loading, error, loaded** — never conflate them. While loading, show a skeleton/spinner in place of content, never alongside stale or partial content from a previous render. A screen is never left in a state where the user can't tell whether it's still loading, failed, or genuinely has nothing to show.
 30. **A failed fetch always shows a specific, user-facing message and a Retry action that re-runs the same fetch** — never surface a raw `error.message` string, and never require a full page reload just to try again. Distinguish at minimum:
-    - **Not found** (the record doesn't exist / was soft-deleted) — no retry offered, since retrying can't change this; show a message and a way back (e.g. a link to the list screen).
+    - **Not found** (the record doesn't exist, or was deleted) — no retry offered, since retrying can't change this; show a message and a way back (e.g. a link to the list screen).
     - **Network/timeout** — retry offered.
     - **Generic/unexpected failure** (RLS denial, server error) — retry offered, message doesn't imply the user did anything wrong.
 

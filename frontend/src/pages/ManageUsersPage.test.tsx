@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from 'vitest';
-import { EdgeFunctionError } from '../lib/edge-function-error';
 import { screen, within } from '@testing-library/react';
 import { ManageUsersPage } from './ManageUsersPage';
 import { userService as realUserService } from '../services/user.service';
@@ -15,13 +14,11 @@ const user = (overrides: Partial<ManagedUser>): ManagedUser => ({
   roles: ['staff'],
   is_active: true,
   email: 'someone@fitandfine.in',
-  deleted_at: null,
   ...overrides,
 });
 
 const ME = user({ id: 'me', full_name: 'Anita Admin', roles: ['admin'], email: 'anita@fitandfine.in' });
 const RAVI = user({ id: 'u-ravi', full_name: 'Ravi Kumar', roles: ['staff'], email: 'ravi@fitandfine.in' });
-const GONE = user({ id: 'u-gone', full_name: 'Gita Rao', roles: ['staff'], is_active: false, email: 'gita@fitandfine.in', deleted_at: '2026-06-01T00:00:00Z' });
 const OFF = user({ id: 'u-off', full_name: 'Omar Sheikh', is_active: false, email: 'omar@fitandfine.in' });
 const USERS = [ME, RAVI, OFF];
 
@@ -30,8 +27,6 @@ function renderUsers(
     users?: ManagedUser[];
     getAll?: ReturnType<typeof vi.fn>;
     update?: ReturnType<typeof vi.fn>;
-    remove?: ReturnType<typeof vi.fn>;
-    restore?: ReturnType<typeof vi.fn>;
     roleNames?: string[];
   } = {}
 ) {
@@ -39,8 +34,6 @@ function renderUsers(
     users = USERS,
     getAll = vi.fn().mockResolvedValue(users),
     update = vi.fn().mockResolvedValue(RAVI),
-    remove = vi.fn().mockResolvedValue(undefined),
-    restore = vi.fn().mockResolvedValue(undefined),
     roleNames = ['admin', 'staff'],
     ...rest
   } = options;
@@ -50,10 +43,10 @@ function renderUsers(
     ...rest,
     services: fakeServices({
       roleRepository: { getAllActive },
-      userService: { ...realUserService, getAll, update, delete: remove, restore },
+      userService: { ...realUserService, getAll, update },
     }),
   });
-  return { ...utils, getAll, update, remove, restore };
+  return { ...utils, getAll, update };
 }
 
 const ready = () => screen.findByRole('heading', { name: 'Manage Users' });
@@ -122,11 +115,10 @@ describe.each([
     expect(within(rowFor('Ravi Kumar')).queryByText('(you)')).not.toBeInTheDocument();
   });
 
-  it('will not let you deactivate or delete yourself (the server rejects it too)', async () => {
+  it('will not let you deactivate yourself (the server rejects it too)', async () => {
     renderUsers({ viewport });
     await ready();
     expect(screen.getByRole('button', { name: 'Deactivate Anita Admin' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Delete Anita Admin' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Deactivate Ravi Kumar' })).toBeEnabled();
   });
 });
@@ -143,24 +135,6 @@ describe('ManageUsersPage — editing', () => {
     await u.click(screen.getByRole('button', { name: 'Save' }));
 
     expect(update).toHaveBeenCalledWith('u-ravi', { full_name: 'Ravi K', roles: ['staff', 'admin'] });
-  });
-
-  it('hides the reserved system_admin role from an ordinary admin, shows it to a system admin', async () => {
-    const roleNames = ['admin', 'staff', 'system_admin'];
-    const first = renderUsers({ viewport: 1280, roleNames });
-    await ready();
-    await first.user.click(screen.getByRole('button', { name: 'Edit Ravi Kumar' }));
-    expect(within(screen.getByRole('group', { name: 'Roles' })).queryByRole('button', { name: 'system_admin' })).not.toBeInTheDocument();
-    first.unmount();
-
-    const second = renderUsers({
-      viewport: 1280,
-      roleNames,
-      auth: { currentProfile: buildAdminProfile({ id: 'me', full_name: 'Anita Admin', roles: ['admin', 'system_admin'] }) },
-    });
-    await ready();
-    await second.user.click(screen.getByRole('button', { name: 'Edit Ravi Kumar' }));
-    expect(within(screen.getByRole('group', { name: 'Roles' })).getByRole('button', { name: 'system_admin' })).toBeInTheDocument();
   });
 
   it('editing YOURSELF locks the role chips and sends only the name (update-user rejects the rest)', async () => {
@@ -215,7 +189,7 @@ describe('ManageUsersPage — editing', () => {
   });
 });
 
-describe('ManageUsersPage — deactivate, delete, restore', () => {
+describe('ManageUsersPage — deactivate and reactivate (users are never deleted)', () => {
   it('deactivating asks first, then flips is_active and reloads', async () => {
     const { user: u, update, getAll } = renderUsers({ viewport: 1280 });
     await ready();
@@ -238,77 +212,20 @@ describe('ManageUsersPage — deactivate, delete, restore', () => {
     expect(update).toHaveBeenCalledWith('u-off', { is_active: true });
   });
 
-  it('deleting asks first and calls delete with the user id', async () => {
-    const { user: u, remove } = renderUsers({ viewport: 1280 });
+  it('offers no delete, restore or "show deleted" control: a user is only deactivated', async () => {
+    renderUsers({ viewport: 1280 });
     await ready();
-    await u.click(screen.getByRole('button', { name: 'Delete Ravi Kumar' }));
-    expect(screen.getByRole('heading', { name: 'Delete user?' })).toBeInTheDocument();
-    await u.click(within(dialog()).getByRole('button', { name: 'Delete' }));
-    expect(remove).toHaveBeenCalledWith('u-ravi');
+    expect(screen.queryByRole('button', { name: /^Delete / })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Restore / })).not.toBeInTheDocument();
+    expect(screen.queryByRole('checkbox', { name: /deleted/i })).not.toBeInTheDocument();
+    expect(screen.queryByText('Deleted')).not.toBeInTheDocument();
   });
 
-  it('Cancel on any dialog changes nothing', async () => {
-    const { user: u, update, remove } = renderUsers({ viewport: 1280 });
+  it('asks the service for every user once, with no include-deleted option', async () => {
+    const { getAll } = renderUsers({ viewport: 1280 });
     await ready();
-    await u.click(screen.getByRole('button', { name: 'Delete Ravi Kumar' }));
-    await u.click(within(dialog()).getByRole('button', { name: 'Cancel' }));
-    expect(update).not.toHaveBeenCalled();
-    expect(remove).not.toHaveBeenCalled();
-    expect(screen.queryByRole('heading', { name: 'Delete user?' })).not.toBeInTheDocument();
-  });
-
-  it('a failed delete keeps the dialog open with a specific message', async () => {
-    const { user: u } = renderUsers({ remove: vi.fn().mockRejectedValue(new Error('Failed to fetch')), viewport: 1280 });
-    await ready();
-    await u.click(screen.getByRole('button', { name: 'Delete Ravi Kumar' }));
-    await u.click(within(dialog()).getByRole('button', { name: 'Delete' }));
-    expect(await screen.findByText("Couldn't delete — check your connection and try again.")).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Delete user?' })).toBeInTheDocument();
-  });
-
-  it('a refusal meant for a person (409) shows the server’s message, e.g. the last admin', async () => {
-    const remove = vi.fn().mockRejectedValue(new EdgeFunctionError('Cannot delete the last active admin', undefined, 409));
-    const { user: u } = renderUsers({ remove, viewport: 1280 });
-    await ready();
-    await u.click(screen.getByRole('button', { name: 'Delete Ravi Kumar' }));
-    await u.click(within(dialog()).getByRole('button', { name: 'Delete' }));
-    expect(await screen.findByText('Cannot delete the last active admin')).toBeInTheDocument();
-  });
-
-  it('a 500 never shows its text: the page’s own generic wording instead', async () => {
-    const remove = vi.fn().mockRejectedValue(new EdgeFunctionError('Something went wrong — please try again', undefined, 500));
-    const { user: u } = renderUsers({ remove, viewport: 1280 });
-    await ready();
-    await u.click(screen.getByRole('button', { name: 'Delete Ravi Kumar' }));
-    await u.click(within(dialog()).getByRole('button', { name: 'Delete' }));
-    expect(await screen.findByText('Something went wrong deleting this user. Please try again.')).toBeInTheDocument();
-  });
-
-  it('a user already deleted elsewhere (404) closes the dialog and reloads', async () => {
-    const remove = vi.fn().mockRejectedValue(new EdgeFunctionError('User not found', undefined, 404));
-    const { user: u } = renderUsers({ remove, viewport: 1280 });
-    await ready();
-    await u.click(screen.getByRole('button', { name: 'Delete Ravi Kumar' }));
-    await u.click(within(dialog()).getByRole('button', { name: 'Delete' }));
-    await vi.waitFor(() => expect(screen.queryByRole('heading', { name: 'Delete user?' })).not.toBeInTheDocument());
-  });
-
-  it('"Show deleted users" reloads including them, and a deleted row offers Restore (not Edit/Delete)', async () => {
-    const getAll = vi.fn().mockImplementation((includeDeleted?: boolean) => Promise.resolve(includeDeleted ? [...USERS, GONE] : USERS));
-    const { user: u, restore } = renderUsers({ getAll, viewport: 1280 });
-    await ready();
-    expect(screen.queryByText('Gita Rao')).not.toBeInTheDocument();
-
-    await u.click(screen.getByRole('checkbox', { name: 'Show deleted users' }));
-    expect(await screen.findByText('Gita Rao')).toBeInTheDocument();
-    expect(getAll).toHaveBeenLastCalledWith(true);
-    expect(within(rowFor('Gita Rao')).getByText('Deleted')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Edit Gita Rao' })).not.toBeInTheDocument();
-
-    await u.click(screen.getByRole('button', { name: 'Restore Gita Rao' }));
-    expect(screen.getByRole('heading', { name: 'Restore user?' })).toBeInTheDocument();
-    await u.click(within(dialog()).getByRole('button', { name: 'Restore' }));
-    expect(restore).toHaveBeenCalledWith('u-gone');
+    expect(getAll).toHaveBeenCalledTimes(1);
+    expect(getAll).toHaveBeenCalledWith();
   });
 });
 

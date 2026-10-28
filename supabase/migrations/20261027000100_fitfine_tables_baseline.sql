@@ -1,12 +1,11 @@
--- Baseline: the fitfine schema exactly as the Phase 1 script left it on the target
--- (spec/migration/phase-2-plan.md, Task 1). Generated, not hand-written:
---   pg_dump --schema-only --schema=fitfine --no-owner --no-privileges "$TARGET_DB_URL"
+-- Baseline: the fitfine schema (tables, indexes, foreign keys and the base functions). Generated,
+-- not hand-written:
+--   pg_dump --schema-only --schema=fitfine --no-owner --no-privileges "$DB_URL"
 -- with the dump's session settings and \restrict lines removed. Then one addition the dump can't
 -- carry: trg_handle_new_auth_user lives on auth.users, outside the dumped schema.
 --
--- On the target this migration is marked applied (supabase migration repair), because Phase 1
--- created all of it. On a fresh database it runs for real. Tasks 2-9 build on it; Task 5 replaces
--- the six trigger functions below with fitfine_private copies.
+-- The later migrations build on it; the trigger-functions migration replaces the six trigger
+-- functions below with fitfine_private copies.
 
 --
 -- Name: fitfine; Type: SCHEMA; Schema: -; Owner: -

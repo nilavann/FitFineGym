@@ -58,12 +58,11 @@ export function assertMatch(text: string, re: RegExp, msg = '') {
 export { world };
 
 /** Scripts the caller's access, as fitfine.user_access returns it for the JWT's user. */
-export function access(level: 'none' | 'active' | 'admin' | 'system_admin', otherActiveAdmins = 1) {
+export function access(level: 'none' | 'active' | 'admin', otherActiveAdmins = 1) {
   world.rpc['user_access'] = () => ({
     data: {
       is_active: level !== 'none',
-      is_admin: level === 'admin' || level === 'system_admin',
-      is_system_admin: level === 'system_admin',
+      is_admin: level === 'admin',
       other_active_admins: otherActiveAdmins,
     },
   });

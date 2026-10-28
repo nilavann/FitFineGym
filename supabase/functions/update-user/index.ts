@@ -1,9 +1,9 @@
-// Edits, soft-deletes or restores another user's profile (admin; spec/backend/edge-functions.md
-// §5). An Edge Function rather than a direct update because RLS can't express "not the caller's own
-// roles or active status". The last-admin rule is enforced inside update_profile_fields,
-// soft_delete_profile and replace_user_roles, in the same transaction as the write; the check
-// here only fails fast, before a request that changes both roles and active status writes either.
-// It is also how an invitee left without roles is fixed.
+// Edits another user's profile: name, roles, and active status (admin; spec/backend/edge-functions.md
+// §5). Users are never deleted, only deactivated. An Edge Function rather than a direct update
+// because RLS can't express "not the caller's own roles or active status". The last-admin rule is
+// enforced inside update_profile_fields and replace_user_roles, in the same transaction as the
+// write; the check here only fails fast, before a request that changes both roles and active
+// status writes either. It is also how an invitee left without roles is fixed.
 import { requireCaller, userAccess } from '../_shared/auth.ts';
 import { serviceClient } from '../_shared/clients.ts';
 import { HttpError, json, readJsonObject, rpcError, serve } from '../_shared/http.ts';
@@ -14,8 +14,6 @@ const schema = object({
   full_name: optional(text({ max: 80 })),
   roles: optional(array(text({ max: 80 }), { min: 1, max: 20 })),
   is_active: optional(boolean()),
-  delete: optional(boolean()),
-  restore: optional(boolean()),
 });
 
 serve('update-user', async (req) => {
@@ -23,21 +21,6 @@ serve('update-user', async (req) => {
   const caller = await requireCaller(req, 'admin', admin);
   const body = parseBody(schema, await readJsonObject(req));
   const isSelf = body.user_id === caller.id;
-
-  // Soft delete (REQ-ADMIN-006): a separate, more severe action than deactivation.
-  if (body.delete) {
-    if (isSelf) throw new HttpError(403, 'You cannot delete your own account.');
-    const { error } = await admin.rpc('soft_delete_profile', { p_caller_id: caller.id, p_target_user_id: body.user_id });
-    rpcError(error);
-    return json({ success: true }, 200);
-  }
-
-  // Restore: undoes a soft delete, so deleting isn't a dead end.
-  if (body.restore) {
-    const { error } = await admin.rpc('restore_profile', { p_caller_id: caller.id, p_target_user_id: body.user_id });
-    rpcError(error);
-    return json({ success: true }, 200);
-  }
 
   if (isSelf && (body.roles !== undefined || body.is_active !== undefined)) {
     throw new HttpError(403, 'You cannot change your own roles or active status.');
@@ -50,7 +33,7 @@ serve('update-user', async (req) => {
   let losesAdmin = false;
   if (body.roles !== undefined) {
     const names = [...new Set(body.roles)];
-    const { data: roles, error: rolesError } = await admin.from('roles').select('id, name').in('name', names).is('deleted_at', null);
+    const { data: roles, error: rolesError } = await admin.from('roles').select('id, name').in('name', names);
     if (rolesError) throw rolesError;
     const rows = (roles ?? []) as { id: number; name: string }[];
     if (rows.length !== names.length) throw new HttpError(400, 'One or more roles do not exist or are not active');
@@ -88,7 +71,6 @@ serve('update-user', async (req) => {
     .from('profiles_with_roles')
     .select('id, full_name, roles, is_active')
     .eq('id', body.user_id)
-    .is('deleted_at', null)
     .maybeSingle();
   if (fetchError) throw fetchError;
   if (!updated) throw new HttpError(404, 'User not found');

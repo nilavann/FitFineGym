@@ -4,6 +4,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
+The non-negotiable principles are in [spec/constitution.md](spec/constitution.md); check work against them. This file holds the day-to-day commands and conventions.
+
 Fit & Fine — a web app for managing gym members, plans, branches, and subscriptions. React + TypeScript + Vite frontend, Supabase (Postgres + RLS, Auth, Edge Functions) backend. Hosted on Vercel (frontend) + Supabase Cloud.
 
 ## Commands
@@ -39,13 +41,11 @@ Supabase (from repo root, via `npx supabase ...` or `npm run supabase -- ...`):
 npx supabase db push --dry-run --db-url "$TARGET_DB_URL"           # preview; applies supabase/migrations/ in order
 npx supabase db push --db-url "$TARGET_DB_URL"
 npx supabase functions deploy <name> --use-api --project-ref <ref>  # no Docker; needs SUPABASE_ACCESS_TOKEN
-scripts/migrate-to-fitfine/run.sh --deploy-backend | --deploy-functions   # the same, plus their checks
-scripts/migrate-to-fitfine/run.sh --final         # first deployment to a brand-new project: data, photos, migrations, functions
 ```
 
-Always target a project explicitly (`--db-url`, `--project-ref`) rather than relying on `supabase link`. The first deployment and its manual steps: README §10.2.
+Always target a project explicitly (`--db-url`, `--project-ref`) rather than relying on `supabase link`. Deployment and its dashboard settings: README §10.
 
-Local env: copy `frontend/.env.example` to `frontend/.env.local` and fill in `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` (anon key only — never the service role key). The one exception anywhere in the repo is `scripts/migrate-to-fitfine/.env.local` (git-ignored, never read by `frontend/` or any app test), which holds the source/target database connection details, the two projects' service-role keys used only by the member-photo copy (`run.sh --photos` / `--validate-photos`), and the personal access token used only to deploy the Edge Functions.
+Local env: copy `frontend/.env.example` to `frontend/.env.local` and fill in `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` (anon key only — never the service role key). The database URL and the personal access token used for deploys stay in your shell or a git-ignored file outside `frontend/`, never committed.
 
 ## Architecture
 
@@ -65,11 +65,9 @@ supabase/           the fitfine backend (schema `fitfine`, the only one the Data
   migrations/       Postgres schema, applied in order via supabase db push
   functions/        Edge Functions — create-member, create-subscription, update-subscription,
                      delete-plan, delete-branch, delete-member, delete-role, invite-user,
-                     list-users, update-user, update-member-number-sequence, purge-member;
+                     list-users, update-user, update-member-number-sequence, delete-subscription;
                      _shared/ (infrastructure), _entities/ (one folder per entity), _tests/ (Deno)
-  tests/            SQL tests (npm run test:db)
-
-scripts/migrate-to-fitfine/   the final run from the old project: data, photos, migrations, functions, checks
+  tests/            SQL tests (npm run test:db), the Supabase stub they build on, local-db.sh
 ```
 
 **Layer rules** (see spec/architecture.md for the full contract):
@@ -85,16 +83,16 @@ scripts/migrate-to-fitfine/   the final run from the old project: data, photos, 
 | `end_date` computation (`start_date + duration_days × quantity - 1`, or `NULL` if indefinite) | `create-subscription` Edge Function, per item |
 | Subscription overlap guard | **Deliberately client-side only** — no backend enforcement exists for this one, by design |
 | Plan/branch deletion guards | `delete-plan`/`delete-branch` Edge Functions + `ON DELETE RESTRICT` |
-| Audit fields (`created_by`/`changed_by`/`deleted_by`) | Postgres trigger reads `auth.uid()` — client never sets these |
-| Soft delete only, never hard `DELETE` | `deleted_at`/`deleted_by` update pattern, backstopped by a `prevent_hard_delete()` trigger — applies even to one-off admin fixes. **One exception:** permanent member delete, `purge-member` → service-role `purge_member()` (system admin only, REQ-MEM-008); do not add a second path |
+| Audit fields (`created_by`/`changed_by`) | Postgres trigger reads `auth.uid()` — client never sets these |
+| Deletes are real, guarded and audited | Members, subscriptions, plans, branches and roles are hard-deleted through `delete-*` Edge Functions that check the usage guard, backed by foreign keys with no cascade; the audit trigger records the deleted row's last values. **Users are never deleted, only deactivated** (`is_active`). `prevent_hard_delete()` still protects `profiles` and `audit_log`. Never add a direct client `DELETE` |
 | Role-based access | RLS policies (primary) + route guards / inline role checks (UX only) |
 | User invitation | `invite-user` Edge Function using the service role, invite-only for both password and Google OAuth sign-in |
 
 Other things worth knowing before editing this codebase:
 - Line items (`subscription_items`) are immutable after creation — `update-subscription` only edits header fields (`payment_mode`, `notes`). Adding/removing/changing an item always means a new `create-subscription` checkout, never an edit.
-- Every read query must exclude soft-deleted rows; RLS handles this for normal client queries, but any Edge Function code running with the service role must add the `deleted_at is null` filter explicitly.
+- There is no soft-delete flag: no `deleted_at` / `deleted_by` column exists, so no read query filters on one. A member that has subscriptions cannot be deleted until those are deleted (`delete-subscription`).
 - No third-party UI component libraries (no MUI/Chakra/Ant/shadcn/Bootstrap) — plain CSS using the shared token file (`frontend/src/styles/tokens.css`) + React only. `lucide-react` is the one approved icon set.
-- Calendar dates (`start_date`/`end_date`) are Postgres `date`, wire-formatted `YYYY-MM-DD`; timestamps (`created_at`, `deleted_at`, etc.) are `timestamptz`, always UTC — convert to local only for display, via `frontend/src/lib/datetime.ts`.
+- Calendar dates (`start_date`/`end_date`) are Postgres `date`, wire-formatted `YYYY-MM-DD`; timestamps (`created_at`, `changed_at`, etc.) are `timestamptz`, always UTC — convert to local only for display, via `frontend/src/lib/datetime.ts`.
 - "The device is offline" is detected with `isNetworkError()` from `frontend/src/lib/network-error.ts` — never by comparing an error message to a literal such as `'Failed to fetch'`. Safari says "Load failed", Firefox another thing, supabase-js prefixes `TypeError: ` on a failed read, and an Edge Function call reports `FunctionsFetchError` (normalised in `lib/edge-function-error.ts`). An exact-string check silently turns every offline state into a generic error. Note that supabase-js also retries a failed GET three times (1s + 2s + 4s), so the offline screen appears about 7s after the request.
 - Schema changes go through `supabase/migrations/` only, never hand-edited in the hosted dashboard.
 - Operational constants (e.g. member-number sequence start/increment/padding) belong in the `configuration` table, not hardcoded — see [spec/backend/database.md](spec/backend/database.md).
@@ -144,4 +142,4 @@ Tooling: **Vitest + React Testing Library** (jsdom) for unit/component tests, co
 
 [spec/](spec/) is the source of truth for behavior and is more detailed than this file. Key entry points: [spec/architecture.md](spec/architecture.md) (layering + server authority table), [spec/backend/rules.md](spec/backend/rules.md) and [spec/frontend/rules.md](spec/frontend/rules.md) (binding implementation rules), [spec/backend/edge-functions.md](spec/backend/edge-functions.md) (full validation steps per function), [spec/backend/edge-function-structure.md](spec/backend/edge-function-structure.md) (how an Edge Function is laid out: entity folders, service / repository / DTO, error codes), [spec/backend/database.md](spec/backend/database.md) (schema, triggers, RLS), [spec/backend/domain-model.md](spec/backend/domain-model.md). Read the relevant spec file before writing a new service, repository, or Edge Function — don't guess at business rules from code alone.
 
-Next: update the frontend for the fitfine backend ([spec/frontend/backend-api-changes.md](spec/frontend/backend-api-changes.md)), then the final run on a brand-new project (README §10.2).
+How the frontend talks to the backend (schema option, error codes, form rules matching the CHECK constraints, Storage paths): [spec/frontend/backend-api.md](spec/frontend/backend-api.md).

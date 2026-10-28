@@ -166,7 +166,7 @@ describe('profileRepository', () => {
   it('lookups read profiles_with_roles (multi-role view)', async () => {
     const { b } = builder({ data: [] });
     from.mockReturnValue(b);
-    await profileRepository.getAllNonDeleted();
+    await profileRepository.getAll();
     expect(from).toHaveBeenCalledWith('profiles_with_roles');
   });
 });

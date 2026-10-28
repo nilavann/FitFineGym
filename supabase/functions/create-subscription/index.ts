@@ -52,9 +52,9 @@ serve('create-subscription', async (req) => {
     }
   }
 
-  // The header member and every shared member exist and aren't soft-deleted.
+  // The header member and every shared member exist.
   const memberIds = [...new Set([body.member_id, ...body.items.flatMap((i) => (i.shared_member_id ? [i.shared_member_id] : []))])];
-  const { data: members, error: membersError } = await admin.from('members').select('id').in('id', memberIds).is('deleted_at', null);
+  const { data: members, error: membersError } = await admin.from('members').select('id').in('id', memberIds);
   if (membersError) throw membersError;
   const found = new Set(((members ?? []) as { id: number }[]).map((m) => m.id));
   const missing = memberIds.find((m) => !found.has(m));
@@ -64,8 +64,7 @@ serve('create-subscription', async (req) => {
   const { data: plans, error: plansError } = await admin
     .from('plans')
     .select('id, name, category, duration_days, price, max_members')
-    .in('id', planIds)
-    .is('deleted_at', null);
+    .in('id', planIds);
   if (plansError) throw plansError;
   const planById = new Map(((plans ?? []) as PlanRow[]).map((p) => [p.id, p]));
   for (const item of body.items) {

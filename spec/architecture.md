@@ -204,10 +204,10 @@ The full function list, with every validation step, lives in [edge-functions.md]
 // line item together, in one call. A checkout always has exactly one category='membership'
 // item plus zero or more category='addon' items; adding something new later is always a new
 // checkout, never an edit to this one.
-// 1. Verify caller is an authenticated, active, non-deleted user (profiles.is_active = true,
-//    deleted_at is null) via the request JWT.
+// 1. Verify caller is an authenticated, active user (profiles.is_active = true, holds a role)
+//    via the request JWT.
 // 2. Validate the payload has ≥1 item and exactly one is category='membership'.
-// 3. Per item: look up the plan (must not be soft-deleted), validate quantity, compute
+// 3. Per item: look up the plan (must exist), validate quantity, compute
 //    end_date = start_date + (duration_days × quantity) - 1 (null for indefinite plans),
 //    compute/accept amount_paid, validate shared_member_id (only for max_members=2
 //    membership items), and hard-block re-attaching an indefinite plan the member already
@@ -226,10 +226,10 @@ The full function list, with every validation step, lives in [edge-functions.md]
 
 // supabase/functions/delete-plan/index.ts
 // 1. Verify caller is an active admin.
-// 2. Count non-deleted subscriptions referencing plan_id.
+// 2. delete_plan locks the plan and counts subscription_items referencing plan_id.
 // 3. If count > 0 → return 409 with a friendly "used by X subscription(s)" message.
-// 4. Else soft-delete: UPDATE plans SET deleted_at = now(), deleted_by = auth.uid() — never a real DELETE
-//    (see database.md §Soft Delete Enforcement).
+// 4. Else DELETE the plan (attributed to the caller; the audit trigger records its last values).
+//    A foreign key with no cascade is the backstop (see database.md §Hard Delete Guards).
 
 // supabase/functions/invite-user/index.ts
 // 1. Verify caller is an active admin.

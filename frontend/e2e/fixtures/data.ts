@@ -170,9 +170,9 @@ export function seedListScreens(mock: {
   mock.functions['list-users'] = () => ({
     json: {
       users: [
-        { id: ADMIN.id, full_name: 'Anita Admin', roles: ['admin'], is_active: true, email: ADMIN.email, deleted_at: null },
-        { id: STAFF.id, full_name: 'Priya Sharma', roles: ['staff'], is_active: true, email: STAFF.email, deleted_at: null },
-        { id: 'u-third', full_name: 'Ravi Kumar', roles: ['staff'], is_active: false, email: 'ravi@fitandfine.in', deleted_at: null },
+        { id: ADMIN.id, full_name: 'Anita Admin', roles: ['admin'], is_active: true, email: ADMIN.email },
+        { id: STAFF.id, full_name: 'Priya Sharma', roles: ['staff'], is_active: true, email: STAFF.email },
+        { id: 'u-third', full_name: 'Ravi Kumar', roles: ['staff'], is_active: false, email: 'ravi@fitandfine.in' },
       ],
     },
   });

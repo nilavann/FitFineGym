@@ -20,7 +20,8 @@
 | REQ-MEM-006 | View + inline-edit every Member field except `member_number`/`created_by`/`branch_id` |
 | REQ-MEM-003 | `created_by` read-only; `handled_by_staff` independently editable |
 | REQ-MEM-002/004 | Photo capture/upload + compression, from this screen |
-| REQ-MEM-007 | Delete member (soft delete) from this screen |
+| REQ-MEM-007 | Delete member (a real delete, refused while subscriptions exist) from this screen |
+| REQ-SUB-013 | Delete a past checkout from Subscription History |
 | REQ-SUB-001–004/006/007/009 | Renew/Add Subscription checkout, reached from this screen |
 | REQ-SUB-005/008 | Client-side overlap warning inside the checkout (own screen, §16) |
 | REQ-LIST-003 | Status badge reused from the Members List status derivation |
@@ -51,7 +52,7 @@ export const memberRepository = {
   async getById(id: number): Promise<Member | null> { /* direct select, RLS-guarded */ },
   async create(data: NewMember): Promise<Member> { /* direct insert, RLS-guarded */ },
   async update(id: number, data: UpdateMember): Promise<void> { /* direct update, RLS-guarded */ },
-  async delete(id: number): Promise<void> { /* update deleted_at/deleted_by — REQ-MEM-007 */ },
+  async delete(id: number): Promise<void> { /* delete-member Edge Function — REQ-MEM-007 */ },
 };
 export type MemberRepository = typeof memberRepository;
 
@@ -282,7 +283,7 @@ View + inline-edit, same toggle pattern as the rest of this page (§4.1's `isEdi
 | Field | Editable | Rule |
 |---|---|---|
 | name | Yes | 2–80 chars |
-| phone | Yes | Exactly 10 digits; unique among non-deleted members — conflict surfaced as a save error naming it |
+| phone | Yes | Exactly 10 digits; unique among members — conflict surfaced as a save error naming it |
 | date_of_birth | Yes | Date picker |
 | date_of_joining | Yes | Date picker |
 | gender | Yes | Male / Female / Other |
@@ -416,6 +417,7 @@ SUBSCRIPTION HISTORY
 | Row header | Checkout date (`created_at`), `payment_mode`, sum of the checkout's item `amount_paid` values |
 | Expand | Reveals every `subscription_items` row in that checkout, each showing plan name + category + its own date range |
 | Edit | Opens a small inline form for **`payment_mode`/`notes` only** — calls `subscriptionRepository.update()` (→ `update-subscription`). No field on any line item is editable here, or anywhere — not `plan_id`, not dates, not `quantity`, not `shared_member_id`. This is a hard rule, not a missing feature: adding/removing/changing an item is always a new checkout (§16) |
+| Delete | A "Delete" control on each checkout row (accessible name `Delete subscription from <date>`) opens a confirm dialog: the checkout's date, every plan and add-on in it goes, it no longer counts in reports, it cannot be undone. Confirm calls `subscriptionRepository.delete(id)` → `delete-subscription`, then reloads the page data (history, add-ons and the membership strip). A 404 just reloads; other failures show a specific message in the dialog (offline, the server's refusal, or a generic one) and keep it open (REQ-SUB-013) |
 | Empty state | "No subscription history yet" |
 
 This directly replaces the old doc's per-subscription edit sheet (Section 15 in the previous version), which let staff change plan/dates/amount on an existing record — that capability doesn't exist in the current data model at all.
@@ -437,7 +439,7 @@ Do not re-derive any of this here — if it changes, update `subscription-manage
 
 ## 17. Delete Member (REQ-MEM-007)
 
-A destructive action on this page (confirm dialog), calling `memberRepository.delete(member.id)` — a plain soft-delete update (`deleted_at`/`deleted_by`), same RLS-guarded path as any other member update. On success, navigate to `/` (Members List). No separate "deactivate" state exists for members — this is the only removal action. Deleting never touches `subscriptions`/`subscription_items`/`audit_log` — that history is retained unchanged and still visible to reports, independent of the member's `deleted_at`.
+A destructive action on this page (confirm dialog), calling `memberRepository.delete(member.id)` → the `delete-member` Edge Function. The dialog says the member and their photos are deleted for good and that it cannot be undone, and that a member who still has subscriptions can't be deleted until those are deleted under Subscription History. On success, navigate to `/` (Members List), replacing the history entry. A member that subscription items still refer to is refused (409, `MEMBER_IN_USE`) and the server's message ("Cannot delete — used by N subscription/add-on record(s)") is shown verbatim in the dialog, which stays open; a 404 (already deleted elsewhere) navigates to `/` like a success; being offline shows a connection message. There is no separate "deactivate" state for members, and no second, "permanent" delete: this is the only removal action, for every role.
 
 ---
 
@@ -445,12 +447,12 @@ A destructive action on this page (confirm dialog), calling `memberRepository.de
 
 | Scenario | Expected behavior |
 |---|---|
-| Member ID not found / soft-deleted | Load error → message + link back to `/` |
+| Member ID not found (never existed, or was deleted) | Load error → message + link back to `/` |
 | Member has zero current items and zero history | §6.1's strip, §14, and §15 all show their respective empty states — this is a normal state for a brand-new member, not an error |
 | `photo_url` missing | Hero shows initials avatar, no broken-image icon |
 | `handled_by_staff` null | Shown as "Not set" in view mode, a staff picker in edit mode |
 | `doctor_care_details` toggled to Yes then blanked before Save | Blocks Save with a validation error, same as create (REQ-MEM-001's rule applies identically to edit) |
-| Phone changed to a value already used by another non-deleted member | Save fails with a conflict error naming it (REQ-MEM-001/006) — `memberForm` stays populated, edit mode stays open |
+| Phone changed to a value already used by another member | Save fails with a conflict error naming it (REQ-MEM-001/006) — `memberForm` stays populated, edit mode stays open |
 | Two browser tabs editing the same member | Not specially handled — last write wins, same as every other table in this app; no optimistic-concurrency check exists anywhere in this project |
 | Subscription History row belongs to a couple-plan item (`shared_member_id` set) | Shown once on this member's history (as either `member_id` or `shared_member_id`), with a small "shared with {other member's name}" note — read-only, not editable from here |
 

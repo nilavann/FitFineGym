@@ -39,7 +39,7 @@ export async function extractFunctionErrorMessage(error: unknown): Promise<strin
 /**
  * An Edge Function failure with its stable `code` (e.g. `MEMBER_PHONE_IN_USE`) and HTTP `status`.
  * Callers that need to tell cases apart switch on `code` or `status` (404: already gone, 403: not
- * allowed, 413: too large — spec/frontend/backend-api-changes.md §2), never on the message text,
+ * allowed, 413: too large — spec/frontend/backend-api.md §2), never on the message text,
  * which may change. `code` is undefined for a function that sends none, for an offline request and
  * for an unexpected error; `status` is undefined when no response arrived.
  */

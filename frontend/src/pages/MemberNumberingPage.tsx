@@ -88,8 +88,8 @@ export function MemberNumberingPage() {
       await loadAll();
     } catch (err) {
       const message = err instanceof Error ? err.message : '';
-      // update_member_number_config refuses with PT403 (not an admin) / PT400 (not a positive integer); it
-      // used to report success and change nothing (spec/frontend/backend-api-changes.md §4).
+      // update_member_number_config refuses with PT403 (not an admin) / PT400 (not a positive integer)
+      // (spec/frontend/backend-api.md §4).
       const code = err instanceof DbError ? err.code : undefined;
       setConfigSaveError(
         isNetworkError(message)

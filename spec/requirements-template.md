@@ -30,13 +30,13 @@ List every distinct type of user/system that interacts with the app, and what th
 
 | ID | Requirement | Who can do it | Priority (Must/Should/Could) |
 |---|---|---|---|
-| REQ-MEM-001 | Staff/admin can register a new member with: name, date of birth (mandatory), phone, date of joining, branch, gender (Male/Female/Other), weight (kg), height (cm), "under doctor's care" flag (+ explanation if yes), and emergency contact (name, mobile, relationship) — all required. Plus optional: email, photo, residential address, aadhaar number, occupation. Phone number must be unique across all (non-deleted) members. | staff, admin | Must |
+| REQ-MEM-001 | Staff/admin can register a new member with: name, date of birth (mandatory), phone, date of joining, branch, gender (Male/Female/Other), weight (kg), height (cm), "under doctor's care" flag (+ explanation if yes), and emergency contact (name, mobile, relationship) — all required. Plus optional: email, photo, residential address, aadhaar number, occupation. Phone number must be unique across all members. | staff, admin | Must |
 | REQ-MEM-002 | Staff/admin can capture a member's photo directly via device camera at registration time, in addition to uploading an existing image file. | staff, admin | Could |
 | REQ-MEM-003 | Every member record stores who created it (system-set, immutable) and a separate, independently editable "handled by" staff field for cases where one staff member enters data on behalf of another. Settable at registration (defaulting to the logged-in staff/admin creating the record, changeable before submit) and independently editable afterward from the member's own page — same field either way, always distinct from `created_by`. | staff, admin | Must |
 | REQ-MEM-004 | A member's photo is compressed client-side (in the browser) before upload, targeting ~400px on the longest side and under ~50KB. Both the original file and the compressed version are uploaded and stored. | staff, admin | Should |
 | REQ-MEM-005 | Every member is assigned a unique, system-generated member number at creation, formatted `<branch code>-<year>-<sequence>` (e.g. `MUM-2026-0001`). The sequence increments continuously per branch and **never resets** — `<year>` reflects the member's actual registration year, not a counter-reset boundary (e.g. a branch's second-ever member might be `MUM-2025-0002`, and its next member the following year `MUM-2026-0003`, not `MUM-2026-0001`). **Revised** from an earlier "resets to 0001 each year" design — see [backend/member-management.md §3](./backend/member-management.md#3-member-number-generation-req-mem-005). | system (staff/admin never enter it) | Must |
 | REQ-MEM-006 | Staff/admin can edit an existing member's details — every field is editable except `member_number` (system-generated, immutable), `created_by` (system-set, immutable, see REQ-MEM-003), and `branch_id` (set once at registration, immutable — REQ-MEM-005's branch code is baked into `member_number` at creation and never revisited). | staff, admin | Must |
-| REQ-MEM-007 | Staff/admin can delete a member. There is no separate "deactivate" state — deleting a member follows the same soft-delete convention as every other entity (`deleted_at`/`deleted_by` set, see Section 11); the member is then excluded from the member list, search, and reports by default. Its `phone` becomes free for reuse by a new member (since phone uniqueness only applies among non-deleted members); `member_number` is never reused. | staff, admin | Should |
+| REQ-MEM-007 | Staff/admin can delete a member, for real. There is no separate "deactivate" state. A member that any subscription item still refers to (as the member or as the shared member) cannot be deleted: its checkouts are deleted first (REQ-SUB-013). The member is then gone from the member list, search and reports, its photo files are removed, and its `phone` is free for reuse by a new member; the `member_number` counter never goes backwards. The deletion is recorded in the audit log with the member's last values. | staff, admin | Should |
 
 ### 2.2 Acceptance Criteria
 
@@ -46,7 +46,7 @@ List every distinct type of user/system that interacts with the app, and what th
 - Given "under doctor's care" = Yes, when staff leaves the explanation text blank, then submission is blocked with a validation error — the explanation is mandatory whenever the flag is Yes.
 - Given staff opens the new member form, when the form loads, then `date_of_joining` is pre-filled with today's date (browser local date).
 - Given the pre-filled `date_of_joining` value, when staff changes it before submitting, then the manually entered date is saved instead of today's date.
-- Given staff submits a phone number already used by another (non-deleted) member, when they submit, then registration is blocked with a validation error naming the conflict.
+- Given staff submits a phone number already used by another member, when they submit, then registration is blocked with a validation error naming the conflict.
 
 **REQ-MEM-002**
 - Given staff chooses "take photo", when they capture via camera, then the captured image is used exactly like an uploaded photo (same storage, same field).
@@ -65,21 +65,22 @@ List every distinct type of user/system that interacts with the app, and what th
 
 **REQ-MEM-006**
 - Given staff/admin opens an existing member's edit form, when they change any editable field and submit, then the record is updated and `changed_by`/`changed_at` are set from the session (system, unchanged from the existing audit pattern).
-- Given staff/admin submits a phone number already used by another (non-deleted) member — whether creating (REQ-MEM-001) or editing (REQ-MEM-006) — then submission is blocked with a validation error naming the conflict.
+- Given staff/admin submits a phone number already used by another member — whether creating (REQ-MEM-001) or editing (REQ-MEM-006) — then submission is blocked with a validation error naming the conflict.
 - Given the edit form, when it is shown, then `member_number`, `created_by`, and `branch_id` are displayed read-only and are never sent as editable inputs.
 - Given an update payload includes a changed `branch_id` (e.g. a forged direct API call), when it reaches the database, then `branch_id` is silently pinned back to its existing value — same enforcement as `member_number`.
 
 **REQ-MEM-007**
-- Given staff/admin deletes a member, when confirmed, then the member's `deleted_at` is set to the current time and `deleted_by` to the acting staff/admin — the row is never physically removed.
-- Given a deleted member, when the member list, search, filters, or reports are queried, then that member is excluded by default, same as any other soft-deleted entity (Section 11).
-- Given a deleted member's phone number, when a new member is registered or an existing member is edited with that same phone number, then it is accepted — uniqueness (REQ-MEM-001/006) only applies among non-deleted members.
+- Given staff/admin deletes a member who has no subscription items, when confirmed, then the member row is removed, their photo files are removed, and the audit log records the deletion (who, when, the last value of every field).
+- Given a member who still has subscription items (as the member or as a shared member), when staff/admin try to delete them, then it is refused with "Cannot delete — used by N subscription/add-on record(s)" and nothing changes; deleting those checkouts first (REQ-SUB-013) makes the member deletable.
+- Given a deleted member, when the member list, search, filters, or reports are queried, then that member is not there.
+- Given a deleted member's phone number, when a new member is registered or an existing member is edited with that same phone number, then it is accepted — the old row is gone.
 - Given a deleted member, when its subscriptions/add-ons/audit history are considered, then those associated records are unaffected and still retained — deleting a member does not cascade-delete or alter its `Subscription`/`SubscriptionAddOn` rows.
 
 ### 2.3 Data touched
 
 - **Member** (required): name, phone, date_of_joining (today's date by default — editable), date_of_birth, gender, weight, height, branch_id (FK → Branch, selected at registration — see REQ-MEM-005), under_doctor_care (yes/no), doctor_care_details (text, relevant when under_doctor_care = yes), emergency_contact_name, emergency_contact_phone, emergency_contact_relationship
 - **Member** (optional): email, photo_url (original, uncompressed), photo_thumbnail_url (**new**, compressed version — see REQ-MEM-004), residential_address, aadhaar_number, occupation
-- **Member** (new, system/audit): created_by (existing, immutable, unchanged), handled_by_staff (**new** field, references a staff/admin profile, independently editable — not the same as created_by/changed_by), deleted_at (timestamptz, nullable), deleted_by (uuid FK → profile, nullable — see REQ-MEM-007, standard soft-delete columns per Section 11)
+- **Member** (new, system/audit): created_by (existing, immutable, unchanged), handled_by_staff (**new** field, references a staff/admin profile, independently editable — not the same as created_by/changed_by). A member has no `deleted_at`/`deleted_by`: deleting is real (REQ-MEM-007, Section 11).
 
 ### 2.4 Business rules specific to this area
 
@@ -90,8 +91,8 @@ List every distinct type of user/system that interacts with the app, and what th
 - Display surfaces (member list, cards, thumbnails) use `photo_thumbnail_url` by default for load speed.
 - "Under doctor's care" defaults to No; the explanation field is only shown/relevant when it is Yes.
 - `date_of_joining` defaults to today's date (browser local date) but is editable by staff before submitting.
-- `Member.phone` is unique across all non-deleted members — enforced on both create (REQ-MEM-001) and edit (REQ-MEM-006), blocking submission with a validation error on conflict.
-- Deleting a member (REQ-MEM-007) always means soft delete (`deleted_at`/`deleted_by` set) — there is no separate "deactivate" state for members, and no hard delete; a deleted member's `Subscription`/`SubscriptionAddOn`/`AuditLog` history is retained unchanged.
+- `Member.phone` is unique across all members — enforced on both create (REQ-MEM-001) and edit (REQ-MEM-006), blocking submission with a validation error on conflict.
+- Deleting a member (REQ-MEM-007) is a real delete, refused while any subscription item refers to the member — there is no separate "deactivate" state for members. The audit log keeps the deleted member's last values; their subscriptions must be deleted first, so none is left behind.
 - `Member.branch_id` is required at registration (REQ-MEM-001) and feeds the member-number generator (REQ-MEM-005); it carries no access-control or filtering meaning today (see Section 11 Constraints for the full branch-scoping note). It is set once at registration and immutable thereafter (REQ-MEM-006) — a member is never reassigned to a different branch, since `member_number`'s embedded branch code is never recomputed after creation.
 - `member_number` is guaranteed unique by its generation algorithm (a continuously-incrementing per-branch sequence that never resets, REQ-MEM-005) and is never client-editable, so no separate uniqueness check is needed for it.
 
@@ -128,7 +129,7 @@ List every distinct type of user/system that interacts with the app, and what th
 
 **REQ-LIST-004**
 - Given staff select one or more genders in the filter panel, when applied, then only members matching one of the selected genders are shown.
-- Given staff select one or more add-ons in the filter panel, when applied, then only members with at least one of the selected add-on plans among their **current** add-on items (`member_current_items`, `category = 'addon'`) are shown — "current" means not soft-deleted and (indefinite or `end_date >= today`), same definition `member_current_items` already uses; there is no cancellation concept to also check (deferred, see REQ-SUB-011).
+- Given staff select one or more add-ons in the filter panel, when applied, then only members with at least one of the selected add-on plans among their **current** add-on items (`member_current_items`, `category = 'addon'`) are shown — "current" means (indefinite or `end_date >= today`), same definition `member_current_items` already uses; there is no cancellation concept to also check (deferred, see REQ-SUB-011).
 - Given staff select one or more plans in the filter panel, when applied, then only members whose **current membership item** (the `category = 'membership'` item with the latest `end_date`, per `member_list_view`) uses one of the selected plans are shown.
 - All filter-panel selections combine with each other (AND), and are additive with the pill filter and search box, consistent with the existing filter-panel behavior in screens.md.
 
@@ -164,14 +165,15 @@ List every distinct type of user/system that interacts with the app, and what th
 | REQ-SUB-002 | Subscription payment mode supports Cash, UPI, or Card — one value per checkout, covering every item created in it. | staff, admin | Must |
 | REQ-SUB-003 | Staff/admin can add one or more add-on-category items to the same checkout as the membership item, chosen from the unified catalog (REQ-ADMIN-002). Each item's cost is shown clearly in the UI, itemized separately. | staff, admin | Should |
 | REQ-SUB-004 | Plans carry a `max_members` value (default 1). For a membership-category plan with `max_members = 2` (e.g. a "Couple" plan), staff can optionally set a second, **shared** member on that item **at creation time only**. There is currently no path to add, change, or clear the shared member after the subscription is created — a narrower capability than the previous design (which allowed editing the secondary member later); see §13 Open Questions. | staff, admin | Must |
-| REQ-SUB-005 | *(Resolved — client-side only)* Before saving a checkout, the client warns (does not block) when a new `category = 'membership'` item's date range overlaps **any** existing non-deleted membership item for that member (as primary `member_id` or `shared_member_id`) — regardless of `plan_id`, since a member logically has one membership at a time. Staff can dismiss the warning and save anyway. | staff, admin | Should |
+| REQ-SUB-005 | *(Resolved — client-side only)* Before saving a checkout, the client warns (does not block) when a new `category = 'membership'` item's date range overlaps **any** existing membership item for that member (as primary `member_id` or `shared_member_id`) — regardless of `plan_id`, since a member logically has one membership at a time. Staff can dismiss the warning and save anyway. | staff, admin | Should |
 | REQ-SUB-006 | A catalog item's duration is expressed by `Plan.duration_days`: NULL means indefinite (charged once, never expires, cannot be attached again to a member who already has it — REQ-SUB-007); a positive number of days means it's time-boxed and can be attached again later (e.g. a new term). This single column replaces the old separate `behavior_type` field. | admin (catalog, REQ-ADMIN-002), staff (attaching) | Must |
-| REQ-SUB-007 | An indefinite item (`Plan.duration_days IS NULL`) cannot be attached to a member who already has a non-deleted `SubscriptionItem` referencing it — a hard block, not a warning. This check only needs to look for an existing row, not a status, so it stands independently of the deferred cancellation logic (REQ-SUB-011). | staff, admin | Must |
-| REQ-SUB-008 | *(Resolved — client-side only)* Same warn-then-allow mechanism as REQ-SUB-005, but scoped to `category = 'addon'` items: the check only compares against existing non-deleted items referencing the **same** `plan_id` for that member — a member can hold several different add-ons concurrently (REQ-SUB-003) without triggering this, but two overlapping instances of the *same* add-on (e.g. two overlapping "Zumba Class" items) do. | staff, admin | Should |
+| REQ-SUB-007 | An indefinite item (`Plan.duration_days IS NULL`) cannot be attached to a member who already has a `SubscriptionItem` referencing it — a hard block, not a warning. This check only needs to look for an existing row, not a status, so it stands independently of the deferred cancellation logic (REQ-SUB-011). | staff, admin | Must |
+| REQ-SUB-008 | *(Resolved — client-side only)* Same warn-then-allow mechanism as REQ-SUB-005, but scoped to `category = 'addon'` items: the check only compares against existing items referencing the **same** `plan_id` for that member — a member can hold several different add-ons concurrently (REQ-SUB-003) without triggering this, but two overlapping instances of the *same* add-on (e.g. two overlapping "Zumba Class" items) do. | staff, admin | Should |
 | REQ-SUB-009 | When adding any catalog item (membership or add-on) with a duration to a checkout, staff can select a quantity/multiplier for its standard period (preset chips ×1/×2/×3/×6/×12, plus a custom number field), extending that item's duration and price by that multiple — e.g. a Monthly plan × 2 = 60 days at 2× the price. Not shown for indefinite items, which have no duration to multiply. Applies uniformly to membership and add-on items — no longer a separate control per type. | staff, admin | Should |
 | REQ-SUB-010 | *(Deferred)* Reducing a `SubscriptionItem`'s quantity after creation ("partial cancellation") — no edit path exists for quantity at all after creation in this revision. | — | Deferred |
 | REQ-SUB-011 | *(Deferred)* Cancel & Refund flow (status, refund amount, cancelled-by/at) for a subscription item. | — | Deferred |
 | REQ-SUB-012 | *(Resolved — no longer deferred)* "Member's current status" no longer maps to a single "latest subscription" — a member's current items can now come from multiple, independent checkouts (`Subscription` rows) at once, unioned via `member_current_items` (domain-model.md §Views). REQ-LIST-001/003/004 are re-implemented against `member_list_view`, which derives status from the `category = 'membership'` item with the latest `end_date` — see [backend/member-management.md §5](./backend/member-management.md#5-member_list_view--resolving-the-member-status-open-question). | — | Resolved |
+| REQ-SUB-013 | Staff/admin can delete a whole checkout — its header and every item in it — for real. It is how a mistaken checkout is undone (items are immutable, so there is no edit), and it is what lets a member that has subscriptions be deleted (REQ-MEM-007). A deleted checkout no longer counts in the member's status, the action center or the reports, and the audit log records it. | staff, admin | Should |
 
 ### 4.2 Acceptance Criteria
 
@@ -189,7 +191,7 @@ List every distinct type of user/system that interacts with the app, and what th
 - Given such a subscription is saved without a shared member, when staff later view it, then there is currently no UI action to add one there — flagged as a gap versus the previous design in §13 Open Questions.
 
 **REQ-SUB-005**
-- Given a new `category = 'membership'` item's `[start_date, end_date]` range overlaps an existing non-deleted membership item (any `plan_id`) for the same member (as `member_id` or `shared_member_id`), when staff attempt to save the checkout, then a warning is shown naming the conflicting plan and its dates, with the option to cancel (stay on the form) or proceed (save anyway).
+- Given a new `category = 'membership'` item's `[start_date, end_date]` range overlaps an existing membership item (any `plan_id`) for the same member (as `member_id` or `shared_member_id`), when staff attempt to save the checkout, then a warning is shown naming the conflicting plan and its dates, with the option to cancel (stay on the form) or proceed (save anyway).
 - Given staff choose to proceed, when the checkout is saved, then it saves exactly as if no conflict had been detected — no flag, column, or audit-log entry records that an overlap warning was shown or dismissed.
 - Given an existing conflicting item is indefinite (`end_date IS NULL`), then it is treated as open-ended (always overlapping) for this comparison — though in practice a new indefinite item can't reach this check at all, since REQ-SUB-007's hard block already prevents re-attaching an indefinite plan.
 - Given this check runs entirely client-side, when a request bypasses the client and calls `create-subscription` directly, then the checkout saves with no warning and no rejection — this requirement has no server-side enforcement.
@@ -199,10 +201,10 @@ List every distinct type of user/system that interacts with the app, and what th
 - Given admin creates a catalog item with a duration in days, when saved, then that item is time-boxed and its `SubscriptionItem` rows get a computed `end_date`.
 
 **REQ-SUB-007**
-- Given a member already has a non-deleted `SubscriptionItem` referencing an indefinite plan (from any past subscription), when staff try to add that same plan to a new checkout for that member, then it is not offered/selectable, or submission is blocked with a clear error — no warning-and-override path for this case.
+- Given a member already has a `SubscriptionItem` referencing an indefinite plan (from any past subscription), when staff try to add that same plan to a new checkout for that member, then it is not offered/selectable, or submission is blocked with a clear error — no warning-and-override path for this case.
 
 **REQ-SUB-008**
-- Given a new `category = 'addon'` item's `[start_date, end_date]` range overlaps an existing non-deleted item referencing the **same** `plan_id` for the same member, when staff attempt to save the checkout, then the same warn-then-allow flow as REQ-SUB-005 applies (naming the conflicting item and its dates, cancel-or-proceed).
+- Given a new `category = 'addon'` item's `[start_date, end_date]` range overlaps an existing item referencing the **same** `plan_id` for the same member, when staff attempt to save the checkout, then the same warn-then-allow flow as REQ-SUB-005 applies (naming the conflicting item and its dates, cancel-or-proceed).
 - Given a new add-on item's date range overlaps an existing item of a **different** `plan_id` (e.g. Zumba Class overlapping Personal Training), then no warning is shown — different add-ons are expected to run concurrently.
 - Given staff choose to proceed, then the same "no trace left behind" rule as REQ-SUB-005 applies — nothing is persisted about the warning having fired.
 
@@ -210,6 +212,12 @@ List every distinct type of user/system that interacts with the app, and what th
 - Given staff add a catalog item with a duration to a checkout, when they reach its quantity control, then preset chips are shown (×1, ×2, ×3, ×6, ×12) plus a custom-number field, defaulting to ×1.
 - Given staff select a quantity of N, when the form recalculates, then `end_date = start_date + (plan.duration_days × N) - 1` and `amount_paid` defaults to `plan.price × N` — straight multiplication, no bulk discount.
 - Given quantity stays at the default ×1, then behavior is unchanged from a normal single-period item.
+
+**REQ-SUB-013**
+- Given a member's Subscription History, when staff/admin choose Delete on a checkout and confirm, then the checkout's header and all of its items are removed and the history refreshes.
+- Given the dialog, then it names the checkout's date, says every plan and add-on in it goes, and warns it cannot be undone; Cancel changes nothing.
+- Given the checkout was already deleted elsewhere, then the page just refreshes.
+- Given the checkout is deleted, then the audit log has a `delete` row per field for the header and for each item, naming the acting user, with the last values.
 
 ### 4.3 Data touched
 
@@ -363,9 +371,8 @@ List every distinct type of user/system that interacts with the app, and what th
 | REQ-ADMIN-003 | **Branch Management**: admin can view a list of all branches and create/edit them (name, code). | admin | Should |
 | REQ-ADMIN-004 | **User Management**: admin can view a list of all staff/admin accounts (name, email, role, active status) and edit role/active-status/full name, and invite new users. | admin | Should |
 | REQ-ADMIN-005 | **Audit Log overview**: admin can view a filterable/searchable list of AuditLog entries (by table, record, date range, changed-by) — view-only, no edit or delete capability. | admin | Could |
-| REQ-MEM-008 | A **system admin** can permanently delete a member — the one hard delete in the app. The member, their subscriptions, line items, change history and photo files are erased for good; staff and ordinary admins keep only the soft delete of REQ-MEM-007. |
-| REQ-ADMIN-010 | The reserved **`system_admin`** role: an admin who can also permanently delete a member and grant or remove this role. Seeded, never editable, renamed or deletable, and only ever held together with `admin`. |
-| REQ-ADMIN-006 | Admin can delete a user account — a separate, more severe action than the existing active/inactive toggle (REQ-ADMIN-004). A deleted user is fully hidden from User Management's list, same soft-delete convention as every other entity (Section 11). An admin can never delete their own account. | admin | Should |
+| REQ-ADMIN-010 | *(Retired)* The reserved `system_admin` role is removed. Its permanent member delete went with the hard-delete change (REQ-MEM-007, REQ-SUB-013), which left it only able to grant itself. There is one elevated role: `admin`. | — | Retired |
+| REQ-ADMIN-006 | *(Retired)* Users are never deleted. The only way to take a user out of use is deactivating them (REQ-ADMIN-004), which is reversible: the user keeps their profile, roles and name on everything they did. |
 
 ### 9.2 Acceptance Criteria
 
@@ -381,7 +388,7 @@ List every distinct type of user/system that interacts with the app, and what th
 
 **REQ-ADMIN-003**
 - Given admin opens Branch Management, when the list loads, then it shows every branch (name, code).
-- Given admin creates or edits a branch, when they submit a code already used by another (non-deleted) branch, then it's blocked with a validation error (unchanged from the existing branch `code` uniqueness rule).
+- Given admin creates or edits a branch, when they submit a code already used by another branch, then it's blocked with a validation error (unchanged from the existing branch `code` uniqueness rule).
 - Given admin creates or edits a branch, when `name` or `code` is left blank, then submission is blocked with a validation error — both fields are mandatory.
 - Given admin tries to delete a branch that has any member registered against it (`Member.branch_id`), then deletion is blocked with a "used by X member(s)" style error — same guard pattern as Plan (REQ-ADMIN-002).
 
@@ -394,30 +401,18 @@ List every distinct type of user/system that interacts with the app, and what th
 - Given admin opens the Audit Log overview, when it loads, then entries can be filtered by table name, record id, date range, and who made the change.
 - Given any AuditLog entry, when viewed, then there is no edit or delete action available anywhere in the UI for it — the log is strictly append-only and read-only from every screen.
 
-**REQ-MEM-008**
-- Given a system admin on a member's detail screen, when they choose "Delete permanently", then a dialog names the member, warns it cannot be undone, and enables the button only once `DELETE` is typed exactly.
-- Given the purge succeeds, then the member, all their subscriptions and items, their audit history and their photo files are gone; nothing is written to the audit log for the purge itself.
-- Given staff, an ordinary admin, or a user who holds `system_admin` without `admin`, then the button is not shown and both `purge-member` and `purge_member()` refuse the call.
-- Given the member is the shared (couple) member on another member's subscription item, then the purge is refused with a message and nothing is changed — items are immutable.
-- Given the purge fails at any point in the database, then nothing is deleted. If only the photo files fail to delete, the rows stay erased and the failure is logged.
+**REQ-ADMIN-010** *(retired)*
+- Given the role catalogue, then there is no `system_admin` role, every role can be edited and deleted (subject to the usage guard), and Manage Roles has no "Reserved" label.
 
-**REQ-ADMIN-010**
-- Given an ordinary admin, when they try to grant or remove `system_admin` (Manage Users, Invite User or the API), then it is refused; editing a system admin's other roles is allowed while `system_admin` stays in the list.
-- Given `system_admin` is requested without `admin`, then it is refused.
-- Given the `system_admin` role, then it cannot be edited, renamed or deleted, and Manage Roles shows "Reserved" instead of Edit/Delete.
-- Given a system admin is deactivated or loses `admin`, then they lose the purge power at once.
+**REQ-ADMIN-006** *(retired)*
+- Given the Manage Users screen, then there is no delete or restore control and no "show deleted" filter: a user is deactivated or reactivated, never deleted, and a deactivated user stays in the list flagged inactive.
 
-**REQ-ADMIN-006**
-- Given admin deletes a user account, when confirmed, then that profile's `deleted_at`/`deleted_by` are set — the row is never physically removed, and the user immediately loses all access (same enforcement as the existing `is_active = false` rule, extended to also cover `deleted_at`).
-- Given admin tries to delete their own account, then it's blocked — same self-protection pattern as the existing "cannot deactivate/demote own account" rule.
-- Given a deleted user, when User Management's list loads, then that user is excluded by default, same as any other soft-deleted entity (Section 11).
-- Deleting a user is distinct from deactivating one (`is_active = false`): deactivation is a reversible toggle still visible in the list; deletion hides the account entirely.
 
 
 ### 9.3 Data touched
 
-- No new fields on any entity. Reads: `Plan`, `Branch`, `Profile`/`auth.users`, and `AuditLog` — all already defined by earlier requirements/existing spec files. REQ-ADMIN-006 reuses `Profile`'s standard `deleted_at`/`deleted_by` soft-delete columns (Section 11) — no new field.
-- **API implication**: needs list + create/update queries for Plan and Branch (straightforward CRUD, RLS-guarded, admin-only), a list/invite/update/delete flow for Profile (reusing the existing `invite-user` Edge Function, plus a delete action for REQ-ADMIN-006), and a read-only filtered query for AuditLog.
+- No new fields on any entity. Reads: `Plan`, `Branch`, `Profile`/`auth.users`, and `AuditLog` — all already defined by earlier requirements/existing spec files. REQ-ADMIN-006 is retired (users are deactivated, never deleted), so `Profile` has no `deleted_at`/`deleted_by`.
+- **API implication**: needs list + create/update queries for Plan and Branch (straightforward CRUD, RLS-guarded, admin-only), a list/invite/update flow for Profile (reusing the existing `invite-user` Edge Function), and a read-only filtered query for AuditLog.
 
 ### 9.4 Business rules specific to this area
 
@@ -443,7 +438,7 @@ List every distinct type of user/system that interacts with the app, and what th
 | Availability | Best-effort, no formal SLA — single deployment, occasional downtime for deploys/maintenance is acceptable. |
 | Scale | Single gym business (with multiple branches, see Section 11), a few hundred to low-thousands of members, under 20 concurrent staff/admin users. |
 | Auditability | Every table has `created_at`, `created_by`, `changed_at`, `changed_by`; every insert/update/delete additionally produces field-level entries in the shared `AuditLog` (REQ-AUDIT-001) — no write path bypasses this. |
-| Data retention / deletion | All entities support **soft delete only** — a `deleted_at` (timestamptz, nullable) and `deleted_by` (uuid, nullable) column pair, mirroring the existing `created_at`/`created_by` and `changed_at`/`changed_by` audit columns. A row is considered deleted when `deleted_at is not null`; there is no separate boolean flag. The app never performs a hard/physical delete. Soft-deleted rows are excluded from all API responses and UI reads by default. A soft delete is itself just an update, so it passes through the same audit logging as any other field change (REQ-AUDIT-001). Subscription/member history is otherwise kept indefinitely. |
+| Data retention / deletion | Members, subscriptions (a checkout and its items), plans, branches and roles are **really deleted**, never flagged: there are no `deleted_at` / `deleted_by` columns. A delete only goes through a function that first checks nothing still uses the row (a member that subscriptions use, a plan or branch or role in use, is refused), backed by foreign keys without cascade. Every delete is an audit event: the field-level audit log (REQ-AUDIT-001) records one `delete` row per column with the row's last values and the acting user, so the history of a deleted record survives. **Users are never deleted, only deactivated**, and audit log entries can never be edited or deleted. Everything else is kept indefinitely. |
 
 ---
 
@@ -451,7 +446,7 @@ List every distinct type of user/system that interacts with the app, and what th
 
 - Single-tenant: one gym business only, no multi-tenant requirement. Multiple **branches** (physical locations) are supported, but only as a simple data field on Member — used at registration and for member-number generation (REQ-MEM-005). Branches do **not** drive access control, filtering, or reporting scope today: every staff/admin account can see and manage members across all branches. Branch-scoped permissions/reporting are explicitly out of scope for now (Section 12).
 - No payment gateway integration — payments (Cash/UPI/Card) are recorded manually as a label, never processed by the app.
-- Every entity uses soft delete (`deleted_at`/`deleted_by`), never a hard delete — see Section 10's Data retention row. Any "delete" acceptance criteria elsewhere in this spec (Plan, Branch, Profile) means setting `deleted_at`/`deleted_by`, guarded where noted.
+- Deletes are real and guarded (Plan, Branch, Role, Member, Subscription) — see Section 10's Data retention row. A "delete" acceptance criterion elsewhere in this spec means removing the row after its usage guard passes, and is audited. Users are deactivated, never deleted.
 - Every entity carries the standard audit columns (`created_at`, `created_by`, `changed_at`, `changed_by`) plus field-level history in `AuditLog` (REQ-AUDIT-001) — this is a blanket convention, not repeated field-by-field in every feature area's Data Touched section.
 - Spec-driven development: this requirements doc (and the domain-model/business-logic/API-contract docs it feeds) must be updated *before* any corresponding functional code change ships — the spec is the source of truth, not the implementation.
 - Platform: web only (Section 0), built on Supabase (Auth + Postgres + RLS + Edge Functions, per [architecture.md](./architecture.md)) — new requirements should reuse that stack's existing patterns (RLS for authorization, Edge Functions for privileged operations like invites) rather than introducing new ones ad hoc.
@@ -486,7 +481,7 @@ Anything you're unsure about — don't guess, resolve before moving to the domai
 
 ## How this feeds the next stages
 
-1. **Each Feature Area's `.3 Data touched` subsection** (Sections 2–9) → merged into the **domain model** (entities, fields, relationships), plus the blanket audit/soft-delete conventions in Section 11.
+1. **Each Feature Area's `.3 Data touched` subsection** (Sections 2–9) → merged into the **domain model** (entities, fields, relationships), plus the blanket audit and delete conventions in Section 11.
 2. **Each Feature Area's `.1 Requirements` + `.4 Business rules` subsections** (Sections 2–9) → become the **business-logic.md** rules and drive which operations need an **API contract**.
 3. **Section 1 (Actors & Roles)** → becomes the **RLS policy / auth** design.
 4. **Section 10 (Non-functional)** → informs indexing, caching, and infra decisions.

@@ -3,13 +3,12 @@
 import { callerClient, type Client } from './clients.ts';
 import { HttpError } from './http.ts';
 
-export type Level = 'active' | 'admin' | 'system_admin';
+export type Level = 'active' | 'admin';
 
 export interface Caller {
   id: string;
   isActive: boolean;
   isAdmin: boolean;
-  isSystemAdmin: boolean;
   /** Active admins other than the caller. */
   otherActiveAdmins: number;
 }
@@ -17,7 +16,6 @@ export interface Caller {
 export interface Access {
   is_active: boolean;
   is_admin: boolean;
-  is_system_admin: boolean;
   other_active_admins: number;
 }
 
@@ -31,7 +29,6 @@ export async function userAccess(admin: Client, userId: string): Promise<Access>
 const REFUSAL: Record<Level, string> = {
   active: 'Active account required',
   admin: 'Admin access required',
-  system_admin: 'System admin access required',
 };
 
 /** The verified caller at `level`, or a 401 / 403. Runs before any other query. */
@@ -43,14 +40,13 @@ export async function requireCaller(req: Request, level: Level, admin: Client): 
   if (error || !data.user) throw new HttpError(401, 'Invalid or expired session');
 
   const access = await userAccess(admin, data.user.id);
-  const allowed = level === 'active' ? access.is_active : level === 'admin' ? access.is_admin : access.is_system_admin;
+  const allowed = level === 'active' ? access.is_active : access.is_admin;
   if (!allowed) throw new HttpError(403, REFUSAL[level]);
 
   return {
     id: data.user.id,
     isActive: access.is_active,
     isAdmin: access.is_admin,
-    isSystemAdmin: access.is_system_admin,
     otherActiveAdmins: access.other_active_admins,
   };
 }

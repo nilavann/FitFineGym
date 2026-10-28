@@ -81,9 +81,9 @@ function renderDetail(
     updateMember?: ReturnType<typeof vi.fn>;
     uploadPhoto?: ReturnType<typeof vi.fn>;
     remove?: ReturnType<typeof vi.fn>;
-    purge?: ReturnType<typeof vi.fn>;
     roles?: string[];
     updateSubscription?: ReturnType<typeof vi.fn>;
+    deleteSubscription?: ReturnType<typeof vi.fn>;
   } = {}
 ) {
   const {
@@ -97,9 +97,9 @@ function renderDetail(
     updateMember = vi.fn().mockResolvedValue({ name: 'Neha J.' }),
     uploadPhoto = vi.fn().mockResolvedValue(undefined),
     remove = vi.fn().mockResolvedValue(undefined),
-    purge = vi.fn().mockResolvedValue({ photosRemoved: true }),
     roles,
     updateSubscription = vi.fn().mockResolvedValue(undefined),
+    deleteSubscription = vi.fn().mockResolvedValue(undefined),
   } = options;
   const utils = renderRoutes(
     [
@@ -113,22 +113,23 @@ function renderDetail(
       routeState,
       ...(roles ? { auth: { currentProfile: buildProfile({ roles }) } } : {}),
       services: fakeServices({
-        memberRepository: { getById, delete: remove, purge },
+        memberRepository: { getById, delete: remove },
         memberService: { ...realMemberService, updateMember, uploadPhoto },
         subscriptionRepository: {
           getCurrentItemsForMember: vi.fn().mockResolvedValue(items),
           getHistoryForMember: vi.fn().mockResolvedValue(history),
           getItemsForSubscriptions: vi.fn().mockResolvedValue(historyItems),
           update: updateSubscription,
+          delete: deleteSubscription,
         },
         planRepository: { getAllActive: vi.fn().mockResolvedValue(PLANS) },
-        profileRepository: { getAllActive: vi.fn().mockResolvedValue(STAFF), getAllNonDeleted: vi.fn().mockResolvedValue(STAFF) },
+        profileRepository: { getAllActive: vi.fn().mockResolvedValue(STAFF), getAll: vi.fn().mockResolvedValue(STAFF) },
         memberListRepository: { getAll: vi.fn().mockResolvedValue([buildMemberListRow({ id: 12, name: 'Neha Joshi' }), buildMemberListRow({ id: 13, name: 'Karan Shah' })]) },
         branchRepository: { getAllActive: vi.fn().mockResolvedValue(BRANCHES) },
       }),
     }
   );
-  return { ...utils, getById, updateMember, uploadPhoto, remove, purge, updateSubscription };
+  return { ...utils, getById, updateMember, uploadPhoto, remove, updateSubscription, deleteSubscription };
 }
 
 const ready = () => screen.findByText('Neha Joshi', { selector: '.member-detail-name' });
@@ -415,7 +416,7 @@ describe('MemberDetailPage — editing the member', () => {
   });
 
   it.each([
-    ['a duplicate phone number', toDbError({ code: '23505', message: 'duplicate key value violates unique constraint "idx_members_phone_active"' }), 'This phone number is already used by another member.'],
+    ['a duplicate phone number', toDbError({ code: '23505', message: 'duplicate key value violates unique constraint "idx_members_phone"' }), 'This phone number is already used by another member.'],
     // Regression: "chk_members_phone_format" mentions "phone", which the page used to read as a duplicate.
     ['a phone the database refuses, on the field', toDbError({ code: '23514', message: 'new row for relation "members" violates check constraint "chk_members_phone_format"' }), "This value isn't accepted — check its length and characters"],
     ['being offline', new Error('Failed to fetch'), "Couldn't save this member — check your connection and try again."],
@@ -438,7 +439,8 @@ describe('MemberDetailPage — deleting', () => {
     await ready();
     await user.click(screen.getByRole('button', { name: 'Delete' }));
     expect(screen.getByRole('heading', { name: 'Delete member?' })).toBeInTheDocument();
-    expect(within(dialog()).getByText(/"Neha Joshi" will be removed/)).toBeInTheDocument();
+    expect(within(dialog()).getByText(/"Neha Joshi" and their photos will be deleted for good/)).toBeInTheDocument();
+    expect(within(dialog()).getByText(/delete those first, under Subscription History/)).toBeInTheDocument();
 
     await user.click(within(dialog()).getByRole('button', { name: 'Delete' }));
     expect(remove).toHaveBeenCalledWith(12);
@@ -476,85 +478,68 @@ describe('MemberDetailPage — deleting', () => {
   });
 });
 
-describe('MemberDetailPage — deleting permanently (system admin only)', () => {
-  const SYSTEM_ADMIN = ['admin', 'system_admin'];
-  const dialog = () => document.querySelector('.member-detail-delete-dialog') as HTMLElement;
-  const confirm = () => within(dialog()).getByRole('button', { name: 'Delete permanently' });
-
+describe('MemberDetailPage — there is one delete, for everyone', () => {
   it.each([
     ['staff', ['staff']],
-    ['an ordinary admin', ['admin']],
-    ['system_admin without admin', ['system_admin']],
-  ])('is not offered to %s', async (_who, roles) => {
+    ['admin', ['admin']],
+  ])('offers %s only the ordinary Delete, never a separate "permanently" one', async (_label, roles) => {
     renderDetail({ roles });
     await ready();
-    expect(screen.queryByRole('button', { name: 'Delete permanently' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Delete' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /permanently/i })).not.toBeInTheDocument();
+  });
+});
+
+describe('MemberDetailPage — deleting a past checkout', () => {
+  const dialog = () => document.querySelector('.member-detail-delete-dialog') as HTMLElement;
+  const withHistory = (extra: Parameters<typeof renderDetail>[0] = {}) =>
+    renderDetail({
+      history: [subscription({ id: 7, created_at: '2026-06-01T10:00:00Z' })],
+      historyItems: [historyItem({ subscription_id: 7 })],
+      ...extra,
+    });
+
+  it('asks first, naming what goes, then deletes by checkout id and reloads the page data', async () => {
+    const { user, deleteSubscription, getById } = withHistory();
+    await ready();
+    await user.click(screen.getByRole('button', { name: /^Delete subscription from/ }));
+    expect(screen.getByRole('heading', { name: 'Delete subscription?' })).toBeInTheDocument();
+    expect(deleteSubscription).not.toHaveBeenCalled();
+
+    await user.click(within(dialog()).getByRole('button', { name: 'Delete' }));
+    expect(deleteSubscription).toHaveBeenCalledWith(7);
+    await vi.waitFor(() => expect(getById).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => expect(screen.queryByRole('heading', { name: 'Delete subscription?' })).not.toBeInTheDocument());
   });
 
-  it('is offered to a system admin next to the ordinary soft delete', async () => {
-    renderDetail({ roles: SYSTEM_ADMIN });
+  it('Cancel deletes nothing', async () => {
+    const { user, deleteSubscription } = withHistory();
     await ready();
-    expect(screen.getByRole('button', { name: 'Delete' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Delete permanently' })).toBeInTheDocument();
-  });
-
-  it('warns, names the member and keeps the button disabled until DELETE is typed exactly', async () => {
-    const { user, purge } = renderDetail({ roles: SYSTEM_ADMIN });
-    await ready();
-    await user.click(screen.getByRole('button', { name: 'Delete permanently' }));
-    expect(screen.getByRole('heading', { name: 'Delete permanently?' })).toBeInTheDocument();
-    expect(within(dialog()).getByText(/"Neha Joshi" and all of their subscriptions/)).toBeInTheDocument();
-    expect(within(dialog()).getByText('This cannot be undone.')).toBeInTheDocument();
-
-    expect(confirm()).toBeDisabled();
-    const input = within(dialog()).getByLabelText('Type DELETE to confirm');
-    await user.type(input, 'delete');
-    expect(confirm()).toBeDisabled();
-    await user.clear(input);
-    await user.type(input, 'DELETE');
-    expect(confirm()).toBeEnabled();
-    expect(purge).not.toHaveBeenCalled();
-  });
-
-  it('purges and returns to the list', async () => {
-    const { user, purge, remove, router } = renderDetail({ roles: SYSTEM_ADMIN });
-    await ready();
-    await user.click(screen.getByRole('button', { name: 'Delete permanently' }));
-    await user.type(within(dialog()).getByLabelText('Type DELETE to confirm'), 'DELETE');
-    await user.click(confirm());
-    expect(purge).toHaveBeenCalledWith(12);
-    expect(remove).not.toHaveBeenCalled();
-    await vi.waitFor(() => expect(router.state.location.pathname).toBe('/'));
-    expect(router.state.historyAction).toBe('REPLACE');
-  });
-
-  it('Cancel purges nothing and forgets what was typed', async () => {
-    const { user, purge } = renderDetail({ roles: SYSTEM_ADMIN });
-    await ready();
-    await user.click(screen.getByRole('button', { name: 'Delete permanently' }));
-    await user.type(within(dialog()).getByLabelText('Type DELETE to confirm'), 'DELETE');
+    await user.click(screen.getByRole('button', { name: /^Delete subscription from/ }));
     await user.click(within(dialog()).getByRole('button', { name: 'Cancel' }));
-    expect(purge).not.toHaveBeenCalled();
-    expect(screen.queryByRole('heading', { name: 'Delete permanently?' })).not.toBeInTheDocument();
+    expect(deleteSubscription).not.toHaveBeenCalled();
+    expect(screen.queryByRole('heading', { name: 'Delete subscription?' })).not.toBeInTheDocument();
+  });
 
-    await user.click(screen.getByRole('button', { name: 'Delete permanently' }));
-    expect(within(dialog()).getByLabelText('Type DELETE to confirm')).toHaveValue('');
+  it('a checkout already deleted elsewhere (404) just refreshes', async () => {
+    const { user, getById } = withHistory({ deleteSubscription: vi.fn().mockRejectedValue(new EdgeFunctionError('Subscription not found', undefined, 404)) });
+    await ready();
+    await user.click(screen.getByRole('button', { name: /^Delete subscription from/ }));
+    await user.click(within(dialog()).getByRole('button', { name: 'Delete' }));
+    await vi.waitFor(() => expect(getById).toHaveBeenCalledTimes(2));
   });
 
   it.each([
-    ['the server’s own refusal, verbatim', new Error('Cannot purge — this member is the shared member on 1 other member(s) subscriptions'), 'Cannot purge — this member is the shared member on 1 other member(s) subscriptions'],
-    ['being offline', new Error('Failed to fetch'), "Couldn't delete this member — check your connection and try again."],
-    ['an empty error', new Error(''), 'Something went wrong deleting this member. Please try again.'],
-  ])('shows %s and keeps the dialog open', async (_label, error, message) => {
-    const { user } = renderDetail({ roles: SYSTEM_ADMIN, purge: vi.fn().mockRejectedValue(error) });
+    ['being offline', new Error('Failed to fetch'), "Couldn't delete — check your connection and try again."],
+    ['a refusal from the server', new EdgeFunctionError('Active account required', undefined, 403), 'Active account required'],
+    ['anything else', new Error('boom'), 'Something went wrong deleting this subscription. Please try again.'],
+  ])('shows a specific message for %s and keeps the dialog open', async (_label, error, message) => {
+    const { user } = withHistory({ deleteSubscription: vi.fn().mockRejectedValue(error) });
     await ready();
-    await user.click(screen.getByRole('button', { name: 'Delete permanently' }));
-    await user.type(within(dialog()).getByLabelText('Type DELETE to confirm'), 'DELETE');
-    await user.click(confirm());
+    await user.click(screen.getByRole('button', { name: /^Delete subscription from/ }));
+    await user.click(within(dialog()).getByRole('button', { name: 'Delete' }));
     expect(await screen.findByText(message)).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Delete permanently?' })).toBeInTheDocument();
-    expect(confirm()).toBeEnabled();
+    expect(screen.getByRole('heading', { name: 'Delete subscription?' })).toBeInTheDocument();
   });
 });
 

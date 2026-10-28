@@ -55,6 +55,12 @@ export const subscriptionRepository = {
     return data as CreateSubscriptionResult;
   },
 
+  /** Deletes a whole checkout — its items and its header — for real (delete-subscription Edge Function). */
+  async delete(id: number): Promise<void> {
+    const { error } = await supabase.functions.invoke('delete-subscription', { body: { subscription_id: id } });
+    if (error) throw await toEdgeFunctionError(error);
+  },
+
   async update(payload: UpdateSubscription): Promise<void> {
     const { error } = await supabase.functions.invoke('update-subscription', { body: payload });
     if (error) throw await toEdgeFunctionError(error);

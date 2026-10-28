@@ -1,5 +1,5 @@
--- New check constraints (spec/migration/phase-2-plan.md §2.2, Task 2). Added valid, never
--- NOT VALID: every existing row must satisfy them, and Task 2 counted the violations first.
+-- Check constraints on text, number and format fields. Added valid, never NOT VALID: every
+-- existing row must satisfy them.
 --
 -- Two character rules, used by every *_text constraint. Written with \u escapes so no invisible
 -- character sits in this file:
@@ -10,7 +10,7 @@
 -- validate.ts in the Edge Functions strips exactly this set, with the same length limits.
 -- A NULL passes every constraint (a CHECK that evaluates to NULL passes).
 
--- Set A (F18-F20) ---------------------------------------------------------------------------
+-- Set A: text fields --------------------------------------------------------------------------
 
 alter table fitfine.members
   add constraint chk_members_name_not_blank check (trim(name) <> ''),
@@ -33,7 +33,7 @@ alter table fitfine.configuration
 alter table fitfine.subscription_items
   add constraint chk_subscription_items_end_after_start check (end_date is null or end_date >= start_date);
 
--- Set B (F26, F28, F29) ---------------------------------------------------------------------
+-- Set B: formats and paths --------------------------------------------------------------------
 
 alter table fitfine.members
   add constraint chk_members_name_text check (
@@ -61,7 +61,7 @@ alter table fitfine.members
   add constraint chk_members_email_format check (
     char_length(email) <= 254 and email ~ '^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$'),
   -- A photo path is always under its own member's folder, so purge-member can only ever remove
-  -- that member's files (F29).
+  -- that member's files.
   add constraint chk_members_photo_url_path check (photo_url ~ ('^' || id || '/original-[0-9]+\.jpg$')),
   add constraint chk_members_photo_thumbnail_url_path check (photo_thumbnail_url ~ ('^' || id || '/thumbnail-[0-9]+\.jpg$'));
 
@@ -70,7 +70,7 @@ alter table fitfine.profiles
     char_length(full_name) <= 80
     and full_name !~ '[\u0001-\u001f\u007f\u200b\u200e\u200f\u202a-\u202e\u2060\u2066-\u2069\ufeff]');
 
--- No '-' and no wildcard, so '<code>-' prefixes exactly one branch's member numbers (F28).
+-- No '-' and no wildcard, so '<code>-' prefixes exactly one branch's member numbers.
 alter table fitfine.branches
   add constraint chk_branches_name_text check (
     char_length(name) <= 80

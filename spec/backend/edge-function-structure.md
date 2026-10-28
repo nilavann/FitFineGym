@@ -19,7 +19,7 @@ the write needs one of these:
 
 | Need | Example |
 |---|---|
-| A secret or privileged API (service role, `auth.admin`, Storage with the service role) | `invite-user`, `list-users`, `purge-member` |
+| A secret or privileged API (service role, `auth.admin`, Storage with the service role) | `invite-user`, `list-users`, `delete-member` (row + photo files) |
 | A value the client can't be trusted to compute | `create-subscription` (`end_date`) |
 | Several writes that must succeed or fail together, or one request that spans database and Storage | `create-subscription`, `create-member` (row + photo) |
 | A rule RLS can't express | `update-user` ("not your own roles") |
@@ -86,7 +86,7 @@ caller's access (`access_of`) and enforces its own rules, as in
 
 - **Request DTO**: the schema in `dto.ts`, built from `_shared/validate.ts` rules. The type is
   `Parsed<typeof schema>`, so the validation and the type cannot drift apart.
-- Unknown fields are rejected (400), so a body cannot carry `deleted_at`, `created_by`, `member_number`.
+- Unknown fields are rejected (400), so a body cannot carry `created_by`, `member_number` or any audit column.
 - Text is normalised, not escaped. Values reach the database only as typed RPC parameters or `.eq` / `.in`.
 - **Response DTO**: an interface in `dto.ts`, built by a mapper. Never return a database row or a
   `to_jsonb` result: a column added later, or an audit column, would reach the client unannounced.
@@ -123,7 +123,7 @@ The client must never match on `message` text.
 1. **Decide** it needs a function (§1).
 2. **Database**: add the RPC in a new migration, `security definer`, `set search_path = ''`, starting
    with `act_as(p_caller_id)` and an `access_of` check, raising refusals with `PT4xx`; revoke from
-   everyone, grant to `service_role`. Add SQL tests. Regenerate `backend-expected.txt`.
+   everyone, grant to `service_role`. Add SQL tests (including a row in the access matrix).
 3. **Entity files**: `dto.ts` (schema, types), `errors.ts` (codes), `rules.ts`, `repository.ts`,
    storage module if needed, `mapper.ts`, `service.ts`.
 4. **`<name>/index.ts`**: `defineFunction({ name, level, schema }, handler)`; the handler calls the service.

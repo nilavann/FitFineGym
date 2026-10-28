@@ -5,7 +5,7 @@ import { expectScanned, readSourceFiles } from '../test/source-files';
  * PostgREST's string filters (`.or()`, `.filter()`, `.not()`, `.like()`, `.ilike()`, `.textSearch()`) take
  * a filter *expression*: a value spliced into one with a template literal or `+` can add its own
  * conditions (`a,id.gt.0`). Values reach a query only through `.eq` / `.in` or as an RPC parameter
- * (spec/frontend/backend-api-changes.md §8; the Edge Functions have the same guard in
+ * (spec/frontend/backend-api.md §8; the Edge Functions have the same guard in
  * supabase/functions/_tests/source-scan.test.ts). `Array.prototype.filter` takes a function, so a
  * `.filter(` call is flagged only when its first argument is a string.
  */

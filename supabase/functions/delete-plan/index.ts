@@ -1,5 +1,5 @@
-// Soft-deletes a plan (admin). soft_delete_plan locks the row, refuses a plan that live subscription
-// items use, and soft-deletes it, attributed to the caller, in one transaction.
+// Deletes a plan (admin). delete_plan locks the row, refuses a plan that subscription items use, and
+// deletes it, attributed to the caller, in one transaction.
 // Its refusals arrive as 409 (in use) and 404 (missing or already deleted).
 import { requireCaller } from '../_shared/auth.ts';
 import { serviceClient } from '../_shared/clients.ts';
@@ -13,7 +13,7 @@ serve('delete-plan', async (req) => {
   const caller = await requireCaller(req, 'admin', admin);
   const body = parseBody(schema, await readJsonObject(req));
 
-  const { error } = await admin.rpc('soft_delete_plan', { p_caller_id: caller.id, p_id: body.plan_id });
+  const { error } = await admin.rpc('delete_plan', { p_caller_id: caller.id, p_id: body.plan_id });
   rpcError(error);
   return json({ success: true }, 200);
 });

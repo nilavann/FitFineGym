@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 /**
- * The browser security headers Vercel sends (spec/frontend/backend-api-changes.md §9). `vite preview`
+ * The browser security headers Vercel sends (spec/frontend/backend-api.md §9). `vite preview`
  * doesn't send them, so E2E can't see them: this guards the config, and a Vercel preview is the real check.
  */
 const config = JSON.parse(readFileSync(join(process.cwd(), 'vercel.json'), 'utf8')) as {

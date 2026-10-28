@@ -1,14 +1,13 @@
 #!/usr/bin/env bash
 # A throwaway local Postgres server (outside the repo) for the backend database tests
-# (supabase/tests/run.sh, npm run test:db) and for regenerating backend-expected.txt
-# (tests/backend-expected.sh). Both build their own database from tests/local/supabase-stub.sql
-# and supabase/migrations. Needs initdb / pg_ctl / psql on PATH.
+# (supabase/tests/run.sh, npm run test:db), which build their own database from
+# supabase-stub.sql and supabase/migrations. Needs initdb / pg_ctl / psql on PATH.
 #
-#   eval "$(tests/local-db.sh start)"   # prints PGHOST / PGPORT / PGUSER for that server
-#   tests/local-db.sh stop
+#   eval "$(supabase/tests/local-db.sh start)"   # prints PGHOST / PGPORT / PGUSER for that server
+#   supabase/tests/local-db.sh stop
 set -euo pipefail
-DATA=${MIG_LOCAL_PGDATA:-${TMPDIR:-/tmp}/migrate-to-fitfine-localdb}
-PORT=${MIG_LOCAL_PGPORT:-54329}
+DATA=${FITFINE_LOCAL_PGDATA:-${TMPDIR:-/tmp}/fitfine-localdb}
+PORT=${FITFINE_LOCAL_PGPORT:-54329}
 
 stop() {
   if [ -f "$DATA/PG_VERSION" ]; then

@@ -1,8 +1,10 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import type { Session } from '@supabase/supabase-js';
-import { supabase, SESSION_EXPIRED_EVENT } from '../lib/supabase-client';
+import { supabase, hasApiKeyBeenRejected, INVALID_API_KEY_EVENT, SESSION_EXPIRED_EVENT } from '../lib/supabase-client';
+import { INVALID_API_KEY_MESSAGE } from '../lib/config-errors';
 import { useServices } from './services.context';
 import { withTimeout } from '../lib/with-timeout';
+import { clearRecoveryPending, isRecoveryPending, setRecoveryPending } from '../lib/recovery-flag';
 import type { AuthContextValue } from '../types/auth';
 import type { Profile } from '../types/profile';
 
@@ -38,12 +40,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isInitialising, setIsInitialising] = useState(true);
   const [blockedMessage, setBlockedMessage] = useState<string | null>(null);
   const [sessionExpired, setSessionExpired] = useState(false);
-  const [needsPasswordReset, setNeedsPasswordReset] = useState(false);
+  // Seeded from the tab's recovery flag, not just the one-shot PASSWORD_RECOVERY event below: the
+  // event can fire before this provider is listening, and is gone after a reload.
+  const [needsPasswordReset, setNeedsPasswordReset] = useState(isRecoveryPending);
   const [authLinkError, setAuthLinkError] = useState<string | null>(null);
 
   // Bumped on every resolveSession call so a slow/stale lookup can't clobber
   // state after a newer one has already resolved (e.g. rapid sign-out/in).
   const requestIdRef = useRef(0);
+
+  // Set once Supabase has rejected the app's own API key. Everything that follows (the failed user and
+  // profile lookups) would otherwise be reported as a transient connection problem or an expired session.
+  const apiKeyInvalidRef = useRef(false);
 
   // A password-reset (or invite/OAuth) link that's expired, already used, or otherwise
   // rejected server-side redirects back here with an error attached instead of a session -
@@ -112,7 +120,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // sign-out over a transient error we can't attribute to the account;
         // just withhold access for now and let the next auth event or focus
         // revalidation (see the visibilitychange listener below) retry.
-        setBlockedMessage(VERIFY_ERROR_MESSAGE);
+        // The session itself is fine, so keep it: a recovery link's session must still reach the
+        // new-password form (ResetPasswordPage needs it), not be bounced to the login page.
+        setBlockedMessage(apiKeyInvalidRef.current ? INVALID_API_KEY_MESSAGE : VERIFY_ERROR_MESSAGE);
+        setSession(nextSession);
         setCurrentProfile(null);
         setIsInitialising(false);
         return;
@@ -137,9 +148,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // stale flag from an earlier recovery attempt can never stick around and block a
       // later, ordinary sign-in.
       if (event === 'PASSWORD_RECOVERY') {
+        setRecoveryPending();
         setNeedsPasswordReset(true);
       }
       if (event === 'SIGNED_OUT' || !nextSession) {
+        clearRecoveryPending();
         setNeedsPasswordReset(false);
       }
       resolveSession(nextSession);
@@ -181,8 +194,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener(SESSION_EXPIRED_EVENT, handleSessionExpired);
   }, [authService]);
 
+  useEffect(() => {
+    function handleInvalidApiKey() {
+      apiKeyInvalidRef.current = true;
+      setBlockedMessage(INVALID_API_KEY_MESSAGE);
+      setIsInitialising(false);
+    }
+    window.addEventListener(INVALID_API_KEY_EVENT, handleInvalidApiKey);
+    if (hasApiKeyBeenRejected()) handleInvalidApiKey(); // it may have happened before this effect ran
+    return () => window.removeEventListener(INVALID_API_KEY_EVENT, handleInvalidApiKey);
+  }, []);
+
   async function updatePassword(newPassword: string) {
     await authService.updatePassword(newPassword);
+    clearRecoveryPending();
+    setNeedsPasswordReset(false);
+  }
+
+  // An ordinary password sign-in is proof the user is not mid-reset, whatever an old, abandoned
+  // reset link left behind in this tab.
+  async function signInWithPassword(email: string, password: string) {
+    await authService.signInWithPassword(email, password);
+    clearRecoveryPending();
     setNeedsPasswordReset(false);
   }
 
@@ -195,7 +228,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     clearSessionExpired: () => setSessionExpired(false),
     authLinkError,
     needsPasswordReset,
-    signInWithPassword: authService.signInWithPassword,
+    signInWithPassword,
     signInWithOAuth: authService.signInWithOAuth,
     resetPasswordForEmail: authService.resetPasswordForEmail,
     updatePassword,

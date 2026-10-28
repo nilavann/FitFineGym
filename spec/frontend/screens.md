@@ -537,7 +537,7 @@ Same list + Add/Edit form shape as WSCR-08 Manage Plans / WSCR-12 Manage Branche
 
 | Field | Type | Required | Notes |
 |---|---|---|---|
-| Name | Text | Yes | Unique among non-deleted roles (`idx_roles_name_active`) — a duplicate name is rejected with "This name is already used by another role." |
+| Name | Text | Yes | Unique among roles (`idx_roles_name`) — a duplicate name is rejected with "This name is already used by another role." |
 | Description | Text | No | Free text |
 
 ### Actions

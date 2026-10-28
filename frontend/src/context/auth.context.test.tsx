@@ -9,9 +9,12 @@ import { buildProfile } from '../test/builders';
 // The provider reads the REAL supabase client for the session and auth events (everything else — the profile
 // lookup and sign-out — comes through useServices(), so those are plain fakes).
 const supabaseAuth = vi.hoisted(() => ({ getSession: vi.fn(), onAuthStateChange: vi.fn() }));
+const rejectedEarlier = vi.hoisted(() => ({ value: false }));
 vi.mock('../lib/supabase-client', () => ({
   supabase: { auth: supabaseAuth },
   SESSION_EXPIRED_EVENT: 'supabase:session-expired',
+  INVALID_API_KEY_EVENT: 'supabase:invalid-api-key',
+  hasApiKeyBeenRejected: () => rejectedEarlier.value,
 }));
 
 import { AuthProvider, useAuth } from './auth.context';
@@ -48,6 +51,8 @@ function setup(options: { getById?: ReturnType<typeof vi.fn>; session?: Session 
 }
 
 beforeEach(() => {
+  window.sessionStorage.clear();
+  rejectedEarlier.value = false;
   supabaseAuth.getSession.mockReset();
   supabaseAuth.onAuthStateChange.mockReset();
   unsubscribe.mockReset();
@@ -127,6 +132,13 @@ describe('AuthProvider — accounts that must never keep a session', () => {
     expect(authService.signOut).not.toHaveBeenCalled();
   });
 
+  it('keeps the session on a lookup failure, so a recovery link still reaches the new-password form', async () => {
+    const { result } = setup({ getById: vi.fn().mockRejectedValue(new Error('Failed to fetch')) });
+    await waitFor(() => expect(result.current.isInitialising).toBe(false));
+    expect(result.current.session).toBe(SESSION);
+    expect(result.current.currentProfile).toBeNull();
+  });
+
   it('never lets a slow, stale lookup undo a newer sign-out', async () => {
     let resolveSlow!: (profile: typeof ACTIVE) => void;
     const getById = vi.fn().mockReturnValue(new Promise((resolve) => (resolveSlow = resolve)));
@@ -183,6 +195,64 @@ describe('AuthProvider — auth events', () => {
     expect(result.current.needsPasswordReset).toBe(false);
   });
 
+  describe('a password-reset link that this page load came from', () => {
+    it('still needs a new password when the PASSWORD_RECOVERY event was missed (it fired before anyone listened)', async () => {
+      window.history.replaceState(null, '', '/#access_token=a&refresh_token=r&type=recovery');
+      const recovery = await import('../lib/recovery-flag');
+      recovery.rememberRecoveryFromUrl();
+
+      const { result } = setup();
+      await waitFor(() => expect(result.current.currentProfile).toEqual(ACTIVE));
+      expect(result.current.needsPasswordReset).toBe(true); // no event was ever emitted
+    });
+
+    it('is still pending after a reload, because the flag outlives the page', async () => {
+      const first = setup();
+      await waitFor(() => expect(first.result.current.currentProfile).toEqual(ACTIVE));
+      await act(async () => emit('PASSWORD_RECOVERY', SESSION));
+      first.unmount();
+
+      const second = setup(); // the reload: fresh state, same tab storage, no event this time
+      await waitFor(() => expect(second.result.current.currentProfile).toEqual(ACTIVE));
+      expect(second.result.current.needsPasswordReset).toBe(true);
+    });
+
+    it('is forgotten once a password is set, so the next reload is an ordinary load', async () => {
+      const first = setup();
+      await waitFor(() => expect(first.result.current.currentProfile).toEqual(ACTIVE));
+      await act(async () => emit('PASSWORD_RECOVERY', SESSION));
+      await act(() => first.result.current.updatePassword('new-secret'));
+      first.unmount();
+
+      const second = setup();
+      await waitFor(() => expect(second.result.current.currentProfile).toEqual(ACTIVE));
+      expect(second.result.current.needsPasswordReset).toBe(false);
+    });
+
+    it('is dropped when there is no session to reset a password for (an expired or used link)', async () => {
+      const recovery = await import('../lib/recovery-flag');
+      recovery.setRecoveryPending();
+      const { result } = setup({ session: null });
+      await act(async () => emit('INITIAL_SESSION', null));
+      await waitFor(() => expect(result.current.isInitialising).toBe(false));
+      expect(result.current.needsPasswordReset).toBe(false);
+      expect(recovery.isRecoveryPending()).toBe(false);
+    });
+
+    it('an abandoned reset does not block a later ordinary password sign-in', async () => {
+      const recovery = await import('../lib/recovery-flag');
+      recovery.setRecoveryPending();
+      const { result, authService } = setup({ session: null });
+      await waitFor(() => expect(result.current.isInitialising).toBe(false));
+      expect(result.current.needsPasswordReset).toBe(true);
+
+      await act(() => result.current.signInWithPassword('a@b.co', 'secret'));
+      expect(authService.signInWithPassword).toHaveBeenCalledWith('a@b.co', 'secret');
+      expect(result.current.needsPasswordReset).toBe(false);
+      expect(recovery.isRecoveryPending()).toBe(false);
+    });
+  });
+
   it('re-checks the session when the tab becomes visible again (a token revoked or account deactivated while backgrounded)', async () => {
     const { result } = setup();
     await waitFor(() => expect(result.current.currentProfile).toEqual(ACTIVE));
@@ -195,6 +265,38 @@ describe('AuthProvider — auth events', () => {
     Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
     document.dispatchEvent(new Event('visibilitychange'));
     expect(supabaseAuth.getSession).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('AuthProvider — the app\'s own API key is rejected', () => {
+  const KEY_MESSAGE = /its Supabase API key is invalid or disabled/;
+
+  it('blocks with a message that names the key, and stops showing the loading screen', async () => {
+    const { result } = setup({ session: null });
+    await waitFor(() => expect(result.current.isInitialising).toBe(false));
+    act(() => {
+      window.dispatchEvent(new Event('supabase:invalid-api-key'));
+    });
+    expect(result.current.blockedMessage).toMatch(KEY_MESSAGE);
+    expect(result.current.sessionExpired).toBe(false); // not an expired session
+  });
+
+  it('shows it even when the key was rejected before the provider started listening', async () => {
+    rejectedEarlier.value = true; // the event already fired, and nobody heard it
+    const { result } = setup({ session: null });
+    await waitFor(() => expect(result.current.isInitialising).toBe(false));
+    expect(result.current.blockedMessage).toMatch(KEY_MESSAGE);
+  });
+
+  it('keeps that message when the profile lookup that follows also fails, instead of a generic connection error', async () => {
+    const getById = vi.fn().mockImplementation(async () => {
+      window.dispatchEvent(new Event('supabase:invalid-api-key')); // what authAwareFetch does on the 401
+      throw new Error('Invalid API key');
+    });
+    const { result } = setup({ getById });
+    await waitFor(() => expect(result.current.blockedMessage).toMatch(KEY_MESSAGE));
+    await waitFor(() => expect(result.current.isInitialising).toBe(false));
+    expect(result.current.blockedMessage).toMatch(KEY_MESSAGE);
   });
 });
 

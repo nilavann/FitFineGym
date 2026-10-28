@@ -1,7 +1,7 @@
 -- Local tests only: the pieces of a Supabase project that the migrations in supabase/migrations
--- and the migration script rely on. The API roles, auth.users / auth.identities / auth.sessions with GoTrue's column
+-- rely on. The API roles, auth.users / auth.identities / auth.sessions with GoTrue's column
 -- shapes (incl. the generated confirmed_at / email columns), auth.uid() as Supabase defines it,
--- and storage.buckets / storage.objects. Applied by supabase/tests/run.sh and tests/backend-expected.sh.
+-- and storage.buckets / storage.objects. Applied by supabase/tests/run.sh.
 
 do $$
 declare r text;

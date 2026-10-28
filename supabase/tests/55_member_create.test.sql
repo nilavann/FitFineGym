@@ -15,7 +15,7 @@ create function t.new_member(p_phone text, p_extra jsonb default '{}') returns j
 $$;
 
 create function t.m_by_phone(p_phone text) returns bigint language sql stable as $$
-  select id from fitfine.members where phone = p_phone and deleted_at is null
+  select id from fitfine.members where phone = p_phone
 $$;
 
 grant execute on function t.new_member(text, jsonb), t.m_by_phone(text) to public;
@@ -131,7 +131,7 @@ begin
     (select count(*) from fitfine.member_list_view where id = v_id), 0::bigint);
   perform t.logout();
 
-  perform t.as_service(format('select fitfine.soft_delete_member(%L, %s)', t.uid('staff'), v_id));
+  perform t.as_service(format('select fitfine.delete_member(%L, %s)', t.uid('staff'), v_id));
   perform t.login('staff');
   perform t.eq('member_list_view: the member is gone after delete-member',
     (select count(*) from fitfine.member_list_view where id = v_id), 0::bigint);

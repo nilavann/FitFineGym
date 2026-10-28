@@ -445,7 +445,7 @@ export class SupabaseMock {
     if (method === 'GET' && pathname.startsWith('/storage/v1/object/sign/')) {
       return void (await route.fulfill({ status: 200, headers: { ...CORS, 'content-type': 'image/png' }, body: PIXEL_PNG }));
     }
-    // Authenticated download (`storage.from(bucket).download(path)` -> GET /object/<bucket>/<path>), used by the data export.
+    // Authenticated download (`storage.from(bucket).download(path)` -> GET /object/<bucket>/<path>).
     if (method === 'GET' && pathname.startsWith('/storage/v1/object/') && !pathname.startsWith('/storage/v1/object/public/')) {
       const key = decodeURIComponent(pathname.slice('/storage/v1/object/'.length));
       if (this.missingObjects.has(key)) {

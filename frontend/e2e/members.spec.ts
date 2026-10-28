@@ -348,7 +348,7 @@ test.describe('Member detail', () => {
     await page.getByRole('button', { name: 'Delete' }).click();
     const dialog = page.locator('.member-detail-delete-dialog');
     await expect(dialog.getByRole('heading', { name: 'Delete member?' })).toBeVisible();
-    await expect(dialog).toContainText('"Bharat Rao" will be removed');
+    await expect(dialog).toContainText('"Bharat Rao" and their photos will be deleted for good');
     expect(supabase.calls('/functions/v1/delete-member')).toHaveLength(0); // asking must not delete
 
     await dialog.getByRole('button', { name: 'Delete' }).click();
@@ -357,7 +357,36 @@ test.describe('Member detail', () => {
     await expect(rows(page)).toHaveCount(3);
     await expect(rows(page).filter({ hasText: 'Bharat Rao' })).toHaveCount(0);
     expect(supabase.calls('/functions/v1/delete-member').map((call) => call.body)).toEqual([{ member_id: 2 }]);
-    // Soft delete only, and only through the Edge Function — never a direct DELETE (CLAUDE.md).
+    // Only through the Edge Function (which checks the usage guard) — never a direct DELETE from the browser.
+    expect(supabase.requests.filter((r) => r.method === 'DELETE')).toEqual([]);
+  });
+
+  test('deleting a past checkout asks first, calls delete-subscription, and the history empties', async ({ page, supabase }) => {
+    supabase.tables.plans = [{ id: 1, name: 'Monthly', category: 'membership', duration_days: 30, price: 1500, max_members: 1 }];
+    supabase.tables.subscriptions = [{ id: 7, member_id: 2, payment_mode: 'Cash', notes: null, created_at: '2026-06-01T10:00:00Z' }];
+    supabase.tables.subscription_items = [
+      { id: 70, subscription_id: 7, plan_id: 1, member_id: 2, shared_member_id: null, start_date: '2026-06-01', end_date: '2026-06-30', quantity: 1, amount_paid: 1500 },
+    ];
+    supabase.functions['delete-subscription'] = (body) => {
+      const id = (body as { subscription_id: number }).subscription_id;
+      supabase.tables.subscriptions = supabase.tables.subscriptions.filter((row) => row.id !== id);
+      supabase.tables.subscription_items = supabase.tables.subscription_items.filter((row) => row.subscription_id !== id);
+      return { json: { success: true } };
+    };
+    await page.goto('/members/2');
+    await expect(page.locator('.member-detail-name')).toHaveText('Bharat Rao');
+    await expect(page.locator('.member-detail-history-row')).toHaveCount(1);
+
+    await page.getByRole('button', { name: /^Delete subscription from/ }).click();
+    const dialog = page.locator('.member-detail-delete-dialog');
+    await expect(dialog.getByRole('heading', { name: 'Delete subscription?' })).toBeVisible();
+    expect(supabase.calls('/functions/v1/delete-subscription')).toHaveLength(0); // asking must not delete
+
+    await dialog.getByRole('button', { name: 'Delete' }).click();
+
+    await expect(page.getByText('No subscription history yet')).toBeVisible();
+    await expect(page.locator('.member-detail-history-row')).toHaveCount(0);
+    expect(supabase.calls('/functions/v1/delete-subscription').map((call) => call.body)).toEqual([{ subscription_id: 7 }]);
     expect(supabase.requests.filter((r) => r.method === 'DELETE')).toEqual([]);
   });
 

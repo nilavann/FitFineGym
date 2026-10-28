@@ -151,7 +151,7 @@ Per tab (dashed card, clock icon):
 ## 6. Explicitly out of scope
 
 - **"Send renewal reminders" backend**: ships disabled everywhere in this pass — no Edge Function, no notification plumbing. Resolved by the design handoff itself, not a gap to fill later without an explicit decision to do so.
-- **Subscription overlap enforcement, plan/branch deletion guards, audit fields, soft delete**: none of that applies here — this screen has no write path at all, only two existing routes (`/members/:id/renew`, `/members/:id`) it links to.
+- **Subscription overlap enforcement, plan/branch deletion guards, audit fields, deleting**: none of that applies here — this screen has no write path at all, only two existing routes (`/members/:id/renew`, `/members/:id`) it links to.
 - **An "All" tab or a merged upcoming+expired list**: deliberately absent — see §5.3.
 
 ---
