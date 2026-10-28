@@ -1,23 +1,19 @@
 # Requirements → Implementation → Test Traceability
 
-> **Updated 2026-10-28:** members, subscriptions, plans, branches and roles are now really deleted behind their usage guards (users are only deactivated); the rows below that concern deletes reflect that. Test counts and the findings table are from the 2026-10-03 audit and were not re-counted.
+> Maps each requirement in [requirements-template.md](./requirements-template.md) (functional requirements, Section 10 non-functional requirements, Section 11 constraints) to its implementation and the tests that cover it, edge cases included.
 >
-> Audit done 2026-10-03 against [requirements-template.md](./requirements-template.md) (functional requirements, Section 10 non-functional requirements, Section 11 constraints). Every requirement was traced to its implementation and given tests that include edge cases. This is the first automated test suite in the repo — before it, nothing was tested.
->
-> **Status key:** ✅ implemented and tested · ⚠️ implemented with a gap (the gap has a test that records it — see [Findings](#findings)) · 🚫 deliberately out of scope / deferred per the spec · 🔎 cannot be verified from the repo (external config) · 📝 specified but not yet implemented (planned coverage only)
+> **Status key:** ✅ implemented and tested · ⚠️ implemented with a gap (listed under [Known gaps](#known-gaps)) · 🚫 deliberately out of scope, deferred, or retired · 🔎 cannot be verified from the repo (external config) · 📝 specified but not yet implemented
 
 ## How to run
 
 | Layer | Command | Needs | What it covers |
 |---|---|---|---|
 | Frontend (vitest, jsdom, Testing Library) | `npm run test:frontend` | `npm install` | pure logic, services, repositories, auth context, and every page rendered against fake services |
-| Edge Functions (Deno) | `npm run test:functions` | [Deno](https://deno.com) 2.x on `PATH` | all 11 functions' auth gates, validation, guards and payload shaping, with `@supabase/supabase-js` swapped for a scriptable fake |
-| Database | `npm run test:db` | `psql` + a local Postgres superuser | the **real migrations** applied to a throwaway DB (Supabase `auth`/`storage`/roles stubbed), then SQL assertions on constraints, triggers, RLS, RPCs, views, audit log, concurrency and a 2,000-member load check |
+| Edge Functions (Deno) | `npm run test:functions` | [Deno](https://deno.com) 2.x on `PATH` | all 12 functions' auth gates, validation, guards and payload shaping, with `@supabase/supabase-js` swapped for a scriptable fake |
+| Database | `npm run test:db` | `psql` + a local Postgres superuser | the **real migrations** applied to a throwaway DB (Supabase `auth`/`storage`/roles stubbed), then SQL assertions on constraints, triggers, RLS, RPCs, views, storage and the audit log |
 | Everything | `npm test` | all of the above | |
 
-Last full run **2026-10-06**: **1,140** frontend tests and **324** Edge Function tests (all green). Playwright: 461 passed, 37 device-conditional skips, 0 failed (before the data export/import feature was removed; counts above are not re-run). The **213** database assertions are from the 2026-10-03 audit and were **not re-run** by `supabase/tests/run.sh` (it needs the local PostgreSQL superuser password, which is not available here). The new `70_import_workbook.test.sql` (117 assertions) was instead executed on **PostgreSQL 18.3 via PGlite** with a scratch runner kept outside the repo: stubs + all 20 real migrations + test framework, then the file — all pass. It has **not** yet run under `run.sh` or on a Supabase project. The older 488 / 136 figures in this file's first audit are superseded.
-
-**Known-gap tests.** A requirement the code does not yet meet is *not* hidden by skipping its test. It is written as a normal assertion of the spec'd behaviour and marked so it passes while the gap exists and **fails the moment the gap is fixed** (forcing it to be promoted to a regular test): `it.fails(...)` in vitest, `knownGap(...)` in Deno, `t.known_gap(...)` / `known-gap -` lines in SQL. Search for `GAP` to list them.
+Last full run **2026-10-28**: **1,053** frontend tests (Vitest), **417** database checks, and **479** Playwright tests passed (desktop Chrome, Pixel 7, iPhone 13; 37 device-conditional skips, 0 failed). The Edge Function (Deno) suite is maintained alongside the code but was not re-run in that pass.
 
 ---
 
@@ -29,9 +25,9 @@ Last full run **2026-10-06**: **1,140** frontend tests and **324** Edge Function
 | MEM-001 phone unique | ✅ | unique index `idx_members_phone` | SQL: duplicate on create, on edit, own phone OK, reuse after the member is deleted, blocked again once reused |
 | MEM-002 camera capture | ✅ | `CameraCaptureModal` | denied camera → message pointing to Upload; no `getUserMedia`; stream released on close; captured frame is a JPEG `File` fed to the same pipeline |
 | MEM-003 created_by / handled_by | ✅ | `set_audit_fields()`, `handled_by_staff` | SQL: forged `created_by` ignored on insert and update, `handled_by_staff` independent and FK-checked; page tests: default = logged-in user, changeable before submit and later from member page, `null` clears |
-| MEM-004 compression + both files stored | ✅ / ⚠️ | `photo-compression.ts`, `member.service.uploadPhoto` | 400px longest side (landscape/portrait/small/exact), quality ladder to <50KB, floor instead of infinite loop, no-canvas & encode failure; both original and thumbnail uploaded, compress-before-upload order, half-failed upload cleaned up, path-save failure cleans up, member kept on any photo failure. ⚠️ **F4**: the failure message is only `console.warn`ed at registration |
+| MEM-004 compression + both files stored | ✅ / ⚠️ | `photo-compression.ts`, `member.service.uploadPhoto` | 400px longest side (landscape/portrait/small/exact), quality ladder to <50KB, floor instead of infinite loop, no-canvas & encode failure; both original and thumbnail uploaded, compress-before-upload order, half-failed upload cleaned up, path-save failure cleans up, member kept on any photo failure. ⚠️ the failure message is only `console.warn`ed at registration (see Known gaps) |
 | MEM-005 member number | ✅ | `generate_member_number()` | SQL: format `<code>-<year>-<seq>`, per-branch counters, never resets (no `year` key), continues from stored counter, client-supplied number overwritten, failed insert burns no number, inactive branch rejected; Deno: `update-member-number-sequence` skips numbers used in any year, honours increment, rejects bad input/misconfig |
-| MEM-006 edit; number/created_by/branch immutable | ✅ / ⚠️ | trigger pins `member_number` & `branch_id`; update payload omits them | SQL: forged `branch_id`/`member_number` silently pinned while other fields in the same UPDATE apply, update never bumps sequence; service: update payload has none of the three; page: no inputs for them. ⚠️ **F5**: branch isn't *displayed* on the member page |
+| MEM-006 edit; number/created_by/branch immutable | ✅ | trigger pins `member_number` & `branch_id`; update payload omits them | SQL: forged `branch_id`/`member_number` silently pinned while other fields in the same UPDATE apply, update never bumps sequence; service: update payload has none of the three; page: no inputs for them, branch shown read-only |
 | MEM-007 delete member | ✅ | `delete-member` function, `delete_member()`; `memberRepository.delete`; delete dialog on `MemberDetailPage` | SQL: refused while a subscription item names the member as member or shared member (409), missing → 404, inactive caller refused, row really gone, last values in the audit log naming the caller, photo paths returned, a checkout deleted first frees the member; Deno: photos under `<member_id>/` removed, nothing outside it, storage failure still 200 with `photos_removed: false`, 404/409 carry `MEMBER_NOT_FOUND` / `MEMBER_IN_USE`; page: confirm/cancel, guard text shown verbatim, offline message; Playwright: delete-member payload, refusal, offline |
 
 ## Member List (§3)
@@ -51,10 +47,10 @@ Last full run **2026-10-06**: **1,140** frontend tests and **324** Edge Function
 | SUB-001 checkout | ✅ | `RenewSubscriptionPage`, `create-subscription`, `create_subscription_with_items` | exactly-one-membership (0, 2, +add-ons) at service, page, Deno and (indirectly) DB level; defaults (today, price×qty); one RPC call carries header+all items; **atomicity** — bad second item, unknown plan, negative amount all leave no orphan header |
 | SUB-002 payment mode | ✅ | header `payment_mode` check | Cash/UPI/Card only, default Cash, one value per checkout |
 | SUB-003 add-ons itemised | ✅ | one row per item | separate `amount_paid` per item in UI total and DB |
-| SUB-004 shared member | ⚠️ **F1** | server + DB ✅ (couple plans only, ≠ primary, never on add-ons) | Deno/SQL tests pass; **UI never offers the picker** (`shared_member_id: null` hard-coded) |
-| SUB-005 membership overlap warning | ⚠️ **F2** | `findItemOverlap` | inclusive date ranges, indefinite = open-ended, quantity extends range, "Save anyway" keeps payload unchanged, Cancel reverts date; ⚠️ only same-plan overlaps warn |
+| SUB-004 shared member | ⚠️ | server + DB ✅ (couple plans only, ≠ primary, never on add-ons) | Deno/SQL tests pass; **UI never offers the picker** (`shared_member_id: null` hard-coded) — see Known gaps |
+| SUB-005 membership overlap warning | ⚠️ | `findItemOverlap` | inclusive date ranges, indefinite = open-ended, quantity extends range, "Save anyway" keeps payload unchanged, Cancel reverts date; ⚠️ only same-plan overlaps warn — see Known gaps |
 | SUB-006 duration / indefinite | ✅ | `plans.duration_days` | NULL end_date, quantity forced to 1, chips hidden, "Never expires" |
-| SUB-007 indefinite hard block | ⚠️ **F3** | RPC check | blocks repeat, blocks inside one checkout (rolled back), other members unaffected, deleted item no longer blocks, 409 mapping, no separate pre-check; ⚠️ **not atomic across concurrent sessions** (two-session test attaches it twice) |
+| SUB-007 indefinite hard block | ⚠️ | RPC check | blocks repeat, blocks inside one checkout (rolled back), other members unaffected, a deleted checkout no longer blocks, 409 mapping, no separate pre-check; ⚠️ not atomic across concurrent sessions — see Known gaps |
 | SUB-008 add-on overlap | ✅ | same function | same add-on warns, different add-on / membership doesn't |
 | SUB-009 quantity | ✅ | `previewEndDate`, server end_date | x1/x2/x3/x6/x12 + custom (clamped 1–60 in UI), 0/negative/fractional rejected, `end = start + days×qty − 1` incl. leap years and year ends, amount = price × qty, no discount |
 | SUB-010/011 | 🚫 deferred | — | SQL asserts no cancellation/refund/overlap columns exist (no scope creep) |
@@ -73,8 +69,8 @@ Last full run **2026-10-06**: **1,140** frontend tests and **324** Edge Function
 | AUDIT-001 field-level audit | ✅ | insert = one row per column, update = one row per *changed* field sharing a `change_id`, no-op writes nothing, metadata columns excluded, a delete = one `delete` row per column with the last values, trigger on all 6 required tables (+roles, user_roles), `changed_by` = acting user, append-only & admin-only |
 | ADMIN-001 admin-only screens | ✅ | `RequireAdmin` (admin / multi-role / no role / no profile), staff nav hides Settings, RLS: staff can read but not write plans/branches/roles/config |
 | ADMIN-002 plans | ✅ | membership needs duration, add-on may be indefinite, price ≥ 0 (0 ok), duration ≥ 1, name unique among live rows, **edit doesn't change past items**, delete guard "used by X" |
-| ADMIN-003 branches | ✅ ⚠️ | blank name/code, duplicate code, code reusable after the branch is deleted, delete guard "used by X member(s)", counter row deleted with the branch; ⚠️ **F7** DB blank-check ignores tabs/newlines |
-| ADMIN-004 users | ✅ ⚠️ | list/status, self-protection (UI disabled + server 403), last-admin guard on deactivate/demote/delete, multi-role edit, invite via function (409 duplicate email, roles validated); ⚠️ **F8** edit form hides the "at least one role" error |
+| ADMIN-003 branches | ✅ ⚠️ | blank name/code, duplicate code, code reusable after the branch is deleted, delete guard "used by X member(s)", counter row deleted with the branch; ⚠️ a name of only non-breaking spaces passes the DB blank-check (see Known gaps) |
+| ADMIN-004 users | ✅ | list/status, self-protection (UI disabled + server 403), last-admin guard on deactivate/demote, multi-role edit, invite via function (409 duplicate email, roles validated), the "at least one role" error shown on the edit form |
 | ADMIN-005 audit overview | ✅ | filters (table, record, dates, user), inverted range rejected, 500-row cap flagged, **no edit/delete control anywhere**, local-day boundaries |
 | MEM-008 permanent member delete | 🚫 retired | replaced by REQ-MEM-007 (a real delete behind the usage guard) and REQ-SUB-013 | `purge-member`, `purge_member()` and the "Delete permanently" dialog were removed; a Vitest test asserts no role is offered a separate permanent delete |
 | ADMIN-010 `system_admin` role | 🚫 retired | the role, `protect_system_admin_role()`, the `is_system_admin` access flag and every guard on the role name were removed (migration `20261028000200`) | SQL: no such role, attribute or function exists; a holder keeps `admin`. Deno: asking `invite-user` for it is an unknown role (400) |
@@ -86,31 +82,24 @@ Last full run **2026-10-06**: **1,140** frontend tests and **324** Edge Function
 | Item | Status | Evidence |
 |---|---|---|
 | Member list < 1s for ~2,000 members | ✅ | DB: `member_list_view` over 2,000 members ≈ 10 ms; client filter+sort over 2,000 rows < 100 ms (tests assert the budgets) |
-| Security: every write role-checked server-side | ⚠️ **F9/F10** | RLS write policies and Edge Function gates verified (non-admin 403 before any table access, deactivated/deleted/never-invited callers refused, no direct client insert on `subscriptions`/`subscription_items`); but see the view and RPC-exposure findings below |
+| Security: every write role-checked server-side | ✅ | RLS write policies and Edge Function gates verified (non-admin 403 before any table access, deactivated/never-invited callers refused, no direct client insert on `subscriptions`/`subscription_items`); the views are `security_invoker`, every privileged RPC is revoked from `anon`/`authenticated` and granted by name | SQL access matrix (every role × every table and function), regression tests; Deno auth gates |
 | Auditability / guarded real deletes | ✅ | every business table has the audit columns; the audit trigger records inserts, updates and deletes; clients hold no `DELETE` grant; `prevent_hard_delete` protects `profiles` and `audit_log` (checked structurally and by attempting deletes) |
 | Members have no login; single tenant; no payment gateway; branch not an access boundary | ✅ | RLS never references `branch_id`; no member auth path exists |
 
 ---
 
-## Findings
+## Known gaps
 
-Ranked. **F1–F8 are spec deviations**, **F9–F11 are security/deployment risks** that depend on how the live Supabase project is configured — each has a one-line check to run against the real project. Nothing in application code was changed to fix these; the only production-code change in this audit is a behaviour-preserving extraction of the list search/filter/sort helpers from `MembersListPage.tsx` into `lib/member-list-filters.ts` so they can be unit-tested.
+Requirements the code does not yet fully meet. None is hidden behind a skipped test.
 
-| # | Sev | Finding | Where | Evidence |
-|---|---|---|---|---|
-| F1 | High | **REQ-SUB-004 (Must): checkout has no shared-member picker.** The UI hard-codes `shared_member_id: null`, so couple plans can never record their second member (the backend supports it). | `RenewSubscriptionPage.tsx:248` | `it.fails` in `RenewSubscriptionPage.test.tsx` |
-| F2 | Med | **REQ-SUB-005: membership overlap only warns for the *same plan*.** Spec (requirements §4, backend/business-logic.md, frontend/subscription-management.md §5) says *any* membership item conflicts, regardless of plan. `src/renew-checkout-page.md` still describes the narrower rule, so the docs disagree. | `subscription.service.ts` `findItemOverlap` | `it.fails` at unit and page level |
-| F3 | Med | **REQ-SUB-007 race is real**: two concurrent checkouts both attach the same indefinite plan; the in-RPC check is not atomic under READ COMMITTED. Fix as that doc suggests (`pg_advisory_xact_lock` on plan+member, or a partial unique index). | `20260801…sql` | `50_concurrency.sh` ends with 2 rows |
-| F4 | Med | **REQ-MEM-004: photo failure at registration isn't shown to staff** — `AddMemberPage` only `console.warn`s it, then navigates away. | `AddMemberPage.tsx:145` | `it.fails` |
-| F5 | Low | REQ-MEM-006: branch is never displayed (read-only) on the member page. | `MemberDetailPage.tsx` | `it.fails` |
-| F6 | Info | REQ-MEM-007 text says deleting a member leaves its subscriptions untouched; the implementation *blocks* deleting a member that has subscription items (a user-confirmed decision). The requirement text should be updated to match. | `delete-member` | Deno + page tests assert the implemented behaviour |
-| F7 | Low | DB blank checks use bare `trim()` (spaces only). | `20260731…sql` | `known-gap` |
-| F8 | Low | Manage Users edit form doesn't render `errors.roles`, so unticking the only role silently blocks Save. Also: the Renew custom-quantity field re-clamps on each keystroke (clearing it snaps to 1, so typing `4` yields `14`), and malformed JSON returns 500 instead of 400. | `ManageUsersPage.tsx`, `RenewSubscriptionPage.tsx`, `create-subscription` | `it.fails` / `knownGap` |
-| F9 | **High — verify** | **The list views bypass RLS.** A plain view runs with its owner's rights; the migrations say it "enforces the querying user's own RLS" but none sets `security_invoker = true`. With Supabase's legacy default grants the public anon key can read `member_list_view` (names, phones, member numbers, photo paths), `member_current_items` and `profiles_with_roles`, and deactivated/deleted users keep read access to the member list. Fix: `alter view … set (security_invoker = true)` for all three. Check: `select has_table_privilege('anon','public.member_list_view','select');` | `20260720000200…`, `20260721…`, `20260722…` | `40_view_exposure.test.sql` (7 `known-gap`s) |
-| F10 | **High — verify** | **"Service-role-only" RPCs are probably callable by any signed-in user.** The migrations `revoke … from public` + `grant … to service_role`, but Supabase's default privileges also grant `EXECUTE` on new `public` functions directly to `anon`/`authenticated`, which that revoke does not remove. If so, any staff user can call `replace_user_roles` (**self-promote to admin**), `update_profile_fields`, `create_subscription_with_items`, `update_subscription_header` directly via `supabase.rpc`, bypassing every Edge Function guard. Fix: `revoke execute … from anon, authenticated` explicitly. Check: `select has_function_privilege('authenticated','public.replace_user_roles(uuid,uuid,smallint[])','execute');` | `20260720000300…`, `20260722…`, `20260802…` | `known-gap`s in `20_…` and `30_…` (the harness shows a staff user calling `replace_user_roles` on themselves succeeds) |
-| F11 | **High — deployment** | **No migration contains a table/view `GRANT`.** The app silently relies on the legacy "auto-expose new objects" default; `supabase/config.toml` says that default is being removed (field deleted 2026-10-30). A project created or reset after that gets no `anon`/`authenticated` privileges at all and every API call would be denied. The fix for F9/F10 should be done together with an explicit grants migration (`grant select, insert, update on … to authenticated` per table, matching the RLS policies). | all migrations | `grep -rn "grant .* on .* to authenticated" supabase/migrations` finds only function grants |
+| Requirement | Gap | Where |
+|---|---|---|
+| REQ-SUB-004 (Must) | The checkout has no shared-member picker: the UI always sends `shared_member_id: null`, so a couple plan can never record its second member (the backend supports it). | `RenewSubscriptionPage.tsx` |
+| REQ-SUB-005 | The membership overlap warning only fires for the *same plan*; the requirement says any overlapping membership item conflicts, whatever its plan. | `subscription.service.ts` `findItemOverlap` |
+| REQ-SUB-007 | Two concurrent checkouts can both attach the same indefinite plan: the check inside `create_subscription_with_items` is not atomic under READ COMMITTED. Fix: a `pg_advisory_xact_lock` on (plan, member) before the check. | `20261027000800_fitfine_api_functions.sql` |
+| REQ-MEM-004 | A photo that fails to upload at registration is only `console.warn`ed; staff are not told. | `AddMemberPage.tsx` |
+| REQ-MEM-001 / ADMIN-002/003 | The database's blank-name check treats a value of only non-breaking spaces as non-blank (tabs, newlines and other control characters are rejected). | `20261027000200_fitfine_constraints.sql` |
 
 ### Observations not turned into tests
-- Google OAuth provider setup and the hosted project's Redirect URL allow-list (AUTH-002/005) are dashboard settings (README §10.3).
-- `invite-user` creates the auth user and *then* inserts `user_roles`; if the second step fails the invited user exists with no role. Not covered (needs a real auth backend).
-- Storage-bucket policies (`member-photos` private bucket) were applied by the migrations in the test DB but the signed-URL behaviour itself needs a real Storage service.
+- Google OAuth provider setup and the project's Redirect URLs / Site URL (AUTH-002/005) are dashboard settings (README §10.3).
+- Storage-bucket policies are applied in the test database, but signed-URL behaviour itself needs a real Storage service.

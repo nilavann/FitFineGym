@@ -1,6 +1,5 @@
--- Storage (spec/migration/phase-2-plan.md §2.6, Task 9). Written to run again on a reloaded target
--- (§4): the bucket is upserted, because the photo copy already created it, and every policy is
--- dropped before it is created.
+-- Storage: the member-photos bucket and its policies. Safe to run again: the bucket is upserted
+-- and every policy is dropped before it is created.
 --
 -- The bucket checks the type the client declares, not the file's bytes. Files are served from the
 -- Supabase domain, never the app's, so a mislabelled file can't run script on the app's origin.
@@ -15,7 +14,7 @@ set public             = excluded.public,
 
 -- Any active user. Writes only at the path shape member.service uses,
 -- <member_id>/(original|thumbnail)-<timestamp>.jpg, which chk_members_photo_url_path also requires
--- of the member row. DELETE is new: the app's photo removal starts working (F9).
+-- of the member row. DELETE is new: the app's photo removal works.
 
 drop policy if exists member_photos_select_active_users on storage.objects;
 create policy member_photos_select_active_users on storage.objects

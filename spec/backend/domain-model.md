@@ -39,7 +39,7 @@ One row per Supabase Auth user (`auth.users`), linked 1:1. Reachable via either 
 - `trg_profiles_no_hard_delete` (`BEFORE DELETE`) — `prevent_hard_delete()`: unconditionally rejects any real `DELETE`. A user is never deleted, only deactivated.
 - `trg_profiles_audit_fields` (`AFTER INSERT OR UPDATE`) — `audit_row_changes()`: writes one `AuditLog` row per changed field.
 
-**Indexes**: PK on `id`, plus `created_by`/`changed_by` (`20260724000000_profiles_fk_indexes.sql`), and the same on every other table with these columns.
+**Indexes**: PK on `id`, plus `created_by`/`changed_by`, and the same on every other table with these columns.
 
 **RLS (select)**: `profiles_select_active_users` (any active caller can read any profile) plus `profiles_select_self` — a user can always read their **own** row even while deactivated (`auth.uid() = id`, no `is_active_user()` gate). Without this second policy, a deactivated caller would fail `is_active_user()` and get zero rows back, indistinguishable from "never invited" — the app needs to tell those two cases apart (REQ-AUTH-003's message vs. the deactivation message), so the self-lookup can't itself depend on being active.
 
@@ -315,7 +315,7 @@ The four audit columns physically exist on this table (`database.md`'s DDL inclu
 
 ### `member_number_sequences`
 
-Internal per-branch counter backing `generate_member_number()` (Member §4) — one row per branch, for that branch's entire lifetime. **Not per-`(branch, year)`** — the counter increments continuously and never resets, including at a calendar-year boundary; only the *year embedded in the formatted `member_number` string* changes from one registration to the next, reflecting whenever that member actually registered. (This table was originally keyed by `(branch_id, year)`, resetting each branch's counter to `member_number_start_sequence` every year — changed by `20260727000000_member_number_continuous_sequence.sql` per an explicit product decision; REQ-MEM-005 updated to match.)
+Internal per-branch counter backing `generate_member_number()` (Member §4) — one row per branch, for that branch's entire lifetime. **Not per-`(branch, year)`** — the counter increments continuously and never resets, including at a calendar-year boundary; only the *year embedded in the formatted `member_number` string* changes from one registration to the next, reflecting whenever that member actually registered.
 
 | Field         | Type    | Nullable | Constraints |
 |---------------|---------|----------|-------------|

@@ -1,8 +1,8 @@
--- Trigger functions (spec/migration/phase-2-plan.md §2.3, Task 5). The six functions move from
--- fitfine (exposed, search_path = fitfine) to fitfine_private (never exposed, search_path = '',
--- every name schema-qualified). Same behaviour as the Phase 1 copies, except
--- handle_new_auth_user, which is now invite-only. Then each of the 26 triggers is recreated with
--- the same name, timing and events on the new function, and the fitfine copies are dropped.
+-- Trigger functions. The six functions move from fitfine (exposed, search_path = fitfine) to
+-- fitfine_private (never exposed, search_path = '', every name schema-qualified). Same behaviour
+-- as the fitfine copies, except handle_new_auth_user, which is now invite-only. Then each of the
+-- 26 triggers is recreated with the same name, timing and events on the new function, and the
+-- fitfine copies are dropped.
 -- One migration, one transaction: no write ever finds a table without its triggers.
 --
 -- Triggers need no EXECUTE grant, so every function here is revoked from everyone.
@@ -123,7 +123,7 @@ begin
 end;
 $$;
 
--- Invoker: touches no table. purge_member() still bypasses it through app.purge_member.
+-- Invoker: touches no table.
 create function fitfine_private.prevent_hard_delete()
 returns trigger
 language plpgsql
@@ -152,7 +152,7 @@ begin
 end;
 $$;
 
--- Invite-only (D7, F17, F30). GoTrue sets invited_at only for an invite from the admin API or
+-- Invite-only. GoTrue sets invited_at only for an invite from the admin API or
 -- the dashboard, so an uninvited sign-up or Google sign-in gets no profile and RLS denies it
 -- everything. Runs AFTER INSERT only: a signed-in user can rewrite their own
 -- raw_user_meta_data at any time, so the metadata is trusted only here, when the invite creates
@@ -323,7 +323,7 @@ drop trigger trg_user_roles_audit_fields on fitfine.user_roles;
 create trigger trg_user_roles_audit_fields after insert or delete on fitfine.user_roles
   for each row execute function fitfine_private.audit_row_changes();
 
--- Nothing points at the Phase 1 copies any more.
+-- Nothing points at the fitfine copies any more.
 drop function fitfine.set_audit_fields();
 drop function fitfine.generate_member_number();
 drop function fitfine.audit_row_changes();

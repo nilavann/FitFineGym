@@ -12,7 +12,7 @@ export function isInPhotoFolder(memberId: number, path: string): boolean {
 
 /**
  * Only objects under `<member_id>/` are ever removed, even if delete_member returned another
- * path (F29). Duplicates are dropped.
+ * path. Duplicates are dropped.
  */
 export function onlyInPhotoFolder(memberId: number, paths: Iterable<string>): string[] {
   return [...new Set(paths)].flatMap((p) => (isInPhotoFolder(memberId, p) ? [p] : []));

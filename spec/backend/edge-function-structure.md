@@ -123,7 +123,7 @@ The client must never match on `message` text.
 1. **Decide** it needs a function (§1).
 2. **Database**: add the RPC in a new migration, `security definer`, `set search_path = ''`, starting
    with `act_as(p_caller_id)` and an `access_of` check, raising refusals with `PT4xx`; revoke from
-   everyone, grant to `service_role`. Add SQL tests. Regenerate `backend-expected.txt`.
+   everyone, grant to `service_role`. Add SQL tests (including a row in the access matrix).
 3. **Entity files**: `dto.ts` (schema, types), `errors.ts` (codes), `rules.ts`, `repository.ts`,
    storage module if needed, `mapper.ts`, `service.ts`.
 4. **`<name>/index.ts`**: `defineFunction({ name, level, schema }, handler)`; the handler calls the service.

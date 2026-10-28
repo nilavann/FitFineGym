@@ -1,9 +1,8 @@
--- API functions (spec/migration/phase-2-plan.md §2.5, Task 8). Written new from the source's
--- behaviour, not copied: act_as replaces the hand-rolled set_config, access_of replaces the old
--- helpers. All SECURITY DEFINER with search_path = '', every name schema-qualified, no dynamic
--- SQL. Names and parameter names are the source's, because callers use them.
+-- API functions. act_as(p_caller_id) makes the writes that follow attributable to the caller and
+-- access_of is the only access rule. All SECURITY DEFINER with search_path = '', every name
+-- schema-qualified, no dynamic SQL.
 --
--- Two audiences (D5):
+-- Two audiences:
 --   client RPC (authenticated): update_member_number_config, caller from auth.uid()
 --   Edge Function RPCs (service_role only): everything else. Each starts with
 --     act_as(p_caller_id), so created_by / changed_by / audit_log name the caller, and re-checks
@@ -47,7 +46,7 @@ revoke all on function fitfine_private.lock_active_profiles()    from public, an
 
 -- Client RPC ----------------------------------------------------------------------------------
 
--- Raises for a non-admin (the source's version updated 0 rows and reported success, F8).
+-- Raises for a non-admin rather than updating 0 rows and reporting success.
 -- configuration has no UPDATE grant or policy: this is its only writer.
 create function fitfine.update_member_number_config(p_start_sequence integer, p_increment integer, p_padding_width integer)
 returns void
@@ -91,7 +90,7 @@ as $$
 $$;
 
 -- One checkout: the header and its items in one transaction. end_date comes from the items, as
--- the create-subscription Edge Function computed it. Added here (F12): the header member and every
+-- the create-subscription Edge Function computed it. The header member and every
 -- shared member exist and aren't soft-deleted, every item is for the header's member, every plan
 -- is active. The members and plans are locked FOR SHARE, so a concurrent soft delete either
 -- waits for this checkout (and then sees its items) or wins (and this checkout finds no member).
@@ -227,7 +226,7 @@ begin
 end;
 $$;
 
--- Edits full_name and/or is_active (NULL leaves a field as it is). Added here (F14): deactivating
+-- Edits full_name and/or is_active (NULL leaves a field as it is). Deactivating
 -- the last active admin is refused inside this transaction, with the active profiles locked.
 create function fitfine.update_profile_fields(
   p_caller_id uuid, p_target_user_id uuid, p_full_name text, p_is_active boolean)
@@ -257,7 +256,7 @@ begin
 end;
 $$;
 
--- Added here (F14): deleting the last active admin is refused inside this transaction.
+-- Deleting the last active admin is refused inside this transaction.
 create function fitfine.soft_delete_profile(p_caller_id uuid, p_target_user_id uuid)
 returns void
 language plpgsql
@@ -429,7 +428,7 @@ begin
 end;
 $$;
 
--- The guarded soft deletes (F22, F13, F14): lock the row, run the usage guard, soft-delete, all in
+-- The guarded soft deletes: lock the row, run the usage guard, soft-delete, all in
 -- one transaction, attributed to the caller. A missing or already deleted row is a 404.
 
 create function fitfine.soft_delete_member(p_caller_id uuid, p_id bigint)
@@ -550,7 +549,7 @@ begin
 end;
 $$;
 
--- The update-member-number-sequence rule (F13, F14, F28), atomic: sets what the next member
+-- The update-member-number-sequence rule, atomic: sets what the next member
 -- registered at a branch will be numbered. member_number is never reused, so a requested value
 -- already issued at this branch (any year, active or soft-deleted member) walks forward by the
 -- configured increment to the first unused one; the result reports the value applied. The

@@ -1,4 +1,4 @@
--- Access core (spec/migration/phase-2-plan.md §2.3, Task 4). access_of is the only place the
+-- Access core. access_of is the only place the
 -- access rule lives; every policy, API function and Edge Function reaches it from here.
 -- Every function: SECURITY DEFINER, search_path = '', every name schema-qualified.
 

@@ -1,6 +1,6 @@
 # Database — Web Edition (Supabase / Postgres)
 
-> **Schema note.** This page describes the tables, columns and rules as first built in the `public` schema. The live backend is the `fitfine` schema in `supabase/migrations/`, which is the source of truth: the same tables and columns, plus the stricter grants, access rule (`fitfine_private.access_of`), constraints, triggers, policies, views and API functions those migrations define. Migration file names below are those of the earlier `public`-schema build, kept in git history. How the frontend calls it: [../frontend/backend-api.md](../frontend/backend-api.md).
+> **Schema note.** The live backend is the `fitfine` schema in `supabase/migrations/`, which is the source of truth; this page describes its tables, columns and rules, with the grants, access rule (`fitfine_private.access_of`), constraints, triggers, policies, views and API functions those migrations define. How the frontend calls it: [../frontend/backend-api.md](../frontend/backend-api.md).
 >
 > Part of: [SPEC-WEB.md](../../SPEC-WEB.md) | App: Fit&Fine Gym Subscription Manager (Web)
 > Data model field definitions: see [domain-model.md](./domain-model.md). Validation/API layer: see [edge-functions.md](./edge-functions.md). Product rules: see [business-logic.md](./business-logic.md).
@@ -430,7 +430,7 @@ insert into configuration (key, value, description) values
 on conflict (key) do nothing;
 ```
 
-(The `member_number_start_sequence`/`member_number_increment` descriptions above reflect the continuous, never-resets counter — the original seed migration's text said "per branch per year"; the live text was corrected via an `UPDATE` in `20260727000000_member_number_continuous_sequence.sql` rather than editing that already-applied seed migration, per this repo's own convention.)
+(The counter is continuous per branch and never resets.)
 
 If a branch ever approaches 9,999 members total, an admin can raise `member_number_padding_width` to `5` without a schema migration — existing already-issued numbers are unaffected since the width only applies at generation time.
 
@@ -807,7 +807,7 @@ create policy "audit_log_select_admin" on audit_log
 
 ## Storage
 
-Bucket `member-photos` — **private**, not public (revised by `20260723000000_member_photos_private_bucket.sql`; this section previously said `public = true` with a public-read policy, which was true only until that migration):
+Bucket `member-photos` — **private**, not public:
 
 ```sql
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
@@ -892,21 +892,22 @@ The `system_admin` role (REQ-ADMIN-010), its `protect_system_admin_role()` trigg
 
 ## Migrations
 
-Initial schema creation, via the Supabase CLI migration workflow. Each file is idempotent (`if not exists` / `on conflict do nothing`), and — because this is the first time this schema is created — running all of them in order against a fresh Supabase project produces the complete database in one pass:
+The schema is built by the files in `supabase/migrations/`, applied in order (`supabase db push`). Running all of them against an empty Supabase project produces the complete database.
 
 ```
-supabase/
-  migrations/
-    20260719000000_initial_schema.sql     ← all tables (profiles, branches, plans, configuration,
-                                             members, member_number_sequences, subscriptions,
-                                             subscription_items, audit_log), and indexes
-    20260719000100_functions_triggers.sql ← set_audit_fields, handle_new_auth_user, generate_member_number,
-                                             prevent_hard_delete, audit_row_changes — and every trigger
-                                             attaching them to their tables
-    20260719000200_views.sql              ← member_current_items
-    20260719000300_rls_policies.sql       ← RLS enable + is_active_user/is_active_admin + every policy
-    20260719000400_storage.sql            ← member-photos bucket + policies
-    20260719000500_seed.sql               ← branches, plans (both categories), configuration seed rows
+supabase/migrations/
+  20261027000100_fitfine_tables_baseline.sql   ← the fitfine schema: tables, indexes, foreign keys, base functions
+  20261027000200_fitfine_constraints.sql       ← CHECK constraints (text, number and format rules)
+  20261027000300_fitfine_schemas_and_grants.sql← fitfine_private schema; everything revoked, then granted by name
+  20261027000400_fitfine_access_core.sql       ← access_of, act_as, is_active_user / is_active_admin
+  20261027000500_fitfine_trigger_functions.sql ← the six trigger functions (fitfine_private) and every trigger
+  20261027000600_fitfine_policies.sql          ← RLS policies
+  20261027000700_fitfine_views.sql             ← member_current_items, member_list_view, profiles_with_roles
+  20261027000800_fitfine_api_functions.sql     ← the RPCs the Edge Functions and the client call
+  20261027000900_fitfine_storage.sql           ← member-photos bucket and its policies
+  20261027001000_fitfine_member_create.sql     ← create_member, set_member_photo
+  20261028000100_hard_delete.sql               ← guarded real deletes; deleted_at / deleted_by dropped
+  20261028000200_remove_system_admin.sql       ← the system_admin role and access flag removed
 ```
 
 New schema changes always get a new migration file — never edit an already-applied migration.
