@@ -25,6 +25,30 @@ function seedQueue(supabase: SupabaseMock) {
 }
 
 test.describe('Action Center', () => {
+  test('the badge refreshes after leaving the queue and coming back (the shell stays mounted)', async ({ page, supabase, signedInAs }) => {
+    seedQueue(supabase);
+    await signedInAs('staff');
+    await page.goto('/reports');
+    await expect(badge(page)).toHaveText('3');
+
+    // A member is renewed on another screen: they drop out of the queue.
+    supabase.tables.member_list_view = supabase.tables.member_list_view.filter((row) => row.id !== 3);
+    // Navigate in-app (a reload would remount the shell and hide the bug).
+    await page.getByRole('link', { name: 'Members' }).first().click();
+    await expect(badge(page)).toHaveText('2');
+  });
+
+  test('the nav badge is a count-only request: no rows are downloaded and no photos are signed for it', async ({ page, supabase, signedInAs }) => {
+    seedQueue(supabase);
+    await signedInAs('staff');
+    await page.goto('/reports'); // a page that does not itself load the queue
+    await expect(badge(page)).toHaveText('3');
+
+    const queueCalls = queueRequests(supabase);
+    expect(queueCalls.map((call) => call.method)).toEqual(['HEAD']);
+    expect(supabase.calls('/storage/v1/object/sign/member-photos')).toHaveLength(0);
+  });
+
   test('lists the queue soonest-first, counts both tabs and shows the queue size on the nav badge', async ({ page, supabase, signedInAs }) => {
     seedQueue(supabase);
     await signedInAs('staff');

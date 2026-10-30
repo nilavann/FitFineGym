@@ -71,24 +71,28 @@ export function getRelativeExpiryLabel(endDate: string): { text: string; tier: E
 }
 
 /**
- * Total Action Center queue size for the nav badge (AppShell) — same bounded query as the
- * page itself, never `getAll()`. Fails silently (no badge) rather than breaking navigation.
+ * Total Action Center queue size for the nav badge (AppShell) — a count-only request over the same
+ * window as the page's list (no rows, no photo signing), never `getAll()`. Fails silently (no badge) rather than breaking navigation.
  *
  * The repository is a parameter (AppShell passes `useServices().memberListRepository`) rather
  * than an imported singleton, so tests can inject a fake — see CLAUDE.md layer rules. Call this
  * once at an always-mounted level and pass the count down; calling it from a branch that
  * remounts would refetch every time (CLAUDE.md "Responsive rendering rules" #3).
+ *
+ * `refreshKey` (AppShell passes the current path) refetches the count when it changes: AppShell stays mounted
+ * across navigation, so without it a renewal or delete would leave the badge showing the old number. The
+ * previous count stays on screen until the new one arrives. The router stays out of this file - the caller owns it.
  */
-export function useActionCenterCount(memberListRepository: MemberListRepository): number | null {
+export function useActionCenterCount(memberListRepository: MemberListRepository, refreshKey?: string): number | null {
   const [count, setCount] = useState<number | null>(null);
 
   useEffect(() => {
     let active = true;
     const { from, to } = getActionCenterWindow();
     memberListRepository
-      .getActionCenterQueue({ from, to })
-      .then((rows) => {
-        if (active) setCount(rows.length);
+      .getActionCenterCount({ from, to })
+      .then((total) => {
+        if (active) setCount(total);
       })
       .catch(() => {
         /* fails silently — no badge on error, navigation must never break */
@@ -96,7 +100,7 @@ export function useActionCenterCount(memberListRepository: MemberListRepository)
     return () => {
       active = false;
     };
-  }, [memberListRepository]);
+  }, [memberListRepository, refreshKey]);
 
   return count;
 }

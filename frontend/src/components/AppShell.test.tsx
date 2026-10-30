@@ -4,7 +4,7 @@ import type { RouteObject } from 'react-router-dom';
 import { AppShell } from './AppShell';
 import { fakeServices } from '../test/fakes';
 import { renderRoutes, type RenderOptions } from '../test/render';
-import { buildAdminProfile, buildMemberListRow } from '../test/builders';
+import { buildAdminProfile } from '../test/builders';
 import { MOBILE_WIDTH, setViewport } from '../test/viewport';
 import type { RouteHandle } from '../lib/route-handle';
 
@@ -26,12 +26,12 @@ const routes: RouteObject[] = [
 
 function renderShell(options: RenderOptions & { queue?: number } = {}) {
   const { queue = 0, services, ...rest } = options;
-  const getActionCenterQueue = vi.fn().mockResolvedValue(Array.from({ length: queue }, () => buildMemberListRow()));
+  const getActionCenterCount = vi.fn().mockResolvedValue(queue);
   const utils = renderRoutes(routes, {
     ...rest,
-    services: services ?? fakeServices({ memberListRepository: { getActionCenterQueue } }),
+    services: services ?? fakeServices({ memberListRepository: { getActionCenterCount } }),
   });
-  return { ...utils, getActionCenterQueue };
+  return { ...utils, getActionCenterCount };
 }
 
 const mainNav = () => screen.queryAllByRole('navigation', { name: 'Main navigation' });
@@ -147,26 +147,37 @@ describe('the Action Center count is fetched ONCE, by the always-mounted shell',
   });
 
   it('does not refetch when the tab bar unmounts/remounts or the window crosses the breakpoint', async () => {
-    const { router, getActionCenterQueue } = renderShell({ viewport: MOBILE_WIDTH, queue: 3 });
+    const { getActionCenterCount } = renderShell({ viewport: MOBILE_WIDTH, queue: 3 });
     await screen.findByText('Members page');
-    await waitFor(() => expect(getActionCenterQueue).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(getActionCenterCount).toHaveBeenCalledTimes(1));
 
-    await act(() => router.navigate('/members/new')); // tab bar unmounts
-    await act(() => router.navigate('/')); // …and remounts
     setViewport(1280); // sidebar replaces the header + tab bar
     setViewport(MOBILE_WIDTH); // …and back
 
-    expect(getActionCenterQueue).toHaveBeenCalledTimes(1);
+    expect(getActionCenterCount).toHaveBeenCalledTimes(1);
+  });
+
+  it('refreshes the badge when the user navigates, so a renewal or delete is reflected on return', async () => {
+    const { router, getActionCenterCount } = renderShell({ viewport: 1280, queue: 3 });
+    await screen.findByText('Members page');
+    await waitFor(() => expect(within(mainNav()[0]).getByText('3')).toBeInTheDocument());
+
+    getActionCenterCount.mockResolvedValue(2); // the member was renewed on the next screen
+    await act(() => router.navigate('/members/1'));
+    await act(() => router.navigate('/'));
+
+    await waitFor(() => expect(within(mainNav()[0]).getByText('2')).toBeInTheDocument());
+    expect(getActionCenterCount).toHaveBeenCalledTimes(3);
   });
 
   it('keeps the badge when the queue request fails — navigation must never break', async () => {
-    const getActionCenterQueue = vi.fn().mockRejectedValue(new Error('offline'));
+    const getActionCenterCount = vi.fn().mockRejectedValue(new Error('offline'));
     renderShell({
       viewport: MOBILE_WIDTH,
-      services: fakeServices({ memberListRepository: { getActionCenterQueue } }),
+      services: fakeServices({ memberListRepository: { getActionCenterCount } }),
     });
     await screen.findByText('Members page');
-    await waitFor(() => expect(getActionCenterQueue).toHaveBeenCalled());
+    await waitFor(() => expect(getActionCenterCount).toHaveBeenCalled());
     expect(within(mainNav()[0]).getAllByRole('link')).toHaveLength(3);
   });
 });

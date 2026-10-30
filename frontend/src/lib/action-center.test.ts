@@ -64,13 +64,12 @@ describe('getRelativeExpiryLabel', () => {
 });
 
 describe('useActionCenterCount', () => {
-  function fakeRepository(getActionCenterQueue: MemberListRepository['getActionCenterQueue']): MemberListRepository {
-    return { getActionCenterQueue } as unknown as MemberListRepository;
+  function fakeRepository(getActionCenterCount: MemberListRepository['getActionCenterCount']): MemberListRepository {
+    return { getActionCenterCount } as unknown as MemberListRepository;
   }
 
-  it('is null until the queue loads, then the queue size', async () => {
-    const rows = [buildMemberListRow(), buildMemberListRow(), buildMemberListRow()];
-    const repository = fakeRepository(vi.fn().mockResolvedValue(rows));
+  it('is null until the count loads, then the queue size', async () => {
+    const repository = fakeRepository(vi.fn().mockResolvedValue(3));
 
     const { result } = renderHook(() => useActionCenterCount(repository));
     expect(result.current).toBeNull();
@@ -78,25 +77,46 @@ describe('useActionCenterCount', () => {
   });
 
   it('asks the repository for the bounded Action Center window, never getAll()', async () => {
-    const getActionCenterQueue = vi.fn().mockResolvedValue([]);
-    renderHook(() => useActionCenterCount(fakeRepository(getActionCenterQueue)));
-    await waitFor(() => expect(getActionCenterQueue).toHaveBeenCalledTimes(1));
-    expect(getActionCenterQueue).toHaveBeenCalledWith({ from: '2025-06-27', to: '2026-07-27' });
+    const getActionCenterCount = vi.fn().mockResolvedValue(0);
+    renderHook(() => useActionCenterCount(fakeRepository(getActionCenterCount)));
+    await waitFor(() => expect(getActionCenterCount).toHaveBeenCalledTimes(1));
+    expect(getActionCenterCount).toHaveBeenCalledWith({ from: '2025-06-27', to: '2026-07-27' });
   });
 
   it('fails silently (no badge) when the fetch rejects — navigation must never break', async () => {
-    const getActionCenterQueue = vi.fn().mockRejectedValue(new Error('offline'));
-    const { result } = renderHook(() => useActionCenterCount(fakeRepository(getActionCenterQueue)));
-    await waitFor(() => expect(getActionCenterQueue).toHaveBeenCalled());
+    const getActionCenterCount = vi.fn().mockRejectedValue(new Error('offline'));
+    const { result } = renderHook(() => useActionCenterCount(fakeRepository(getActionCenterCount)));
+    await waitFor(() => expect(getActionCenterCount).toHaveBeenCalled());
     expect(result.current).toBeNull();
   });
 
+  it('fetches again when the refresh key changes, keeping the old count until the new one arrives', async () => {
+    const getActionCenterCount = vi.fn().mockResolvedValueOnce(3).mockResolvedValueOnce(2);
+    const repository = fakeRepository(getActionCenterCount);
+    const { result, rerender } = renderHook(({ key }) => useActionCenterCount(repository, key), { initialProps: { key: '/a' } });
+    await waitFor(() => expect(result.current).toBe(3));
+
+    rerender({ key: '/b' });
+    expect(result.current).toBe(3);
+    await waitFor(() => expect(result.current).toBe(2));
+    expect(getActionCenterCount).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not fetch again when it re-renders with the same refresh key', async () => {
+    const getActionCenterCount = vi.fn().mockResolvedValue(1);
+    const repository = fakeRepository(getActionCenterCount);
+    const { rerender } = renderHook(({ key }) => useActionCenterCount(repository, key), { initialProps: { key: '/a' } });
+    await waitFor(() => expect(getActionCenterCount).toHaveBeenCalledTimes(1));
+    rerender({ key: '/a' });
+    expect(getActionCenterCount).toHaveBeenCalledTimes(1);
+  });
+
   it('does not set state after unmount', async () => {
-    let resolve!: (rows: unknown[]) => void;
-    const pending = new Promise<unknown[]>((r) => (resolve = r));
+    let resolve!: (total: number) => void;
+    const pending = new Promise<number>((r) => (resolve = r));
     const { unmount } = renderHook(() => useActionCenterCount(fakeRepository(vi.fn().mockReturnValue(pending))));
     unmount();
-    resolve([buildMemberListRow()]);
+    resolve(1);
     await pending; // the console.error guard (src/test/console.ts) fails the test on a stray React warning
   });
 });
