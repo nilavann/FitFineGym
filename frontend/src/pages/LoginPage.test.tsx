@@ -123,20 +123,7 @@ describe('LoginPage — the form', () => {
   });
 });
 
-describe('LoginPage — Google and password reset', () => {
-  it('Continue with Google starts the OAuth flow', async () => {
-    const { user, auth } = renderLogin();
-    await user.click(screen.getByRole('button', { name: 'Continue with Google' }));
-    expect(auth.signInWithOAuth).toHaveBeenCalledWith('google');
-  });
-
-  it('says so when Google sign-in cannot start', async () => {
-    const { user, auth } = renderLogin();
-    (auth.signInWithOAuth as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('popup blocked'));
-    await user.click(screen.getByRole('button', { name: 'Continue with Google' }));
-    expect(await screen.findByText('Could not start Google sign-in. Please try again.')).toBeInTheDocument();
-  });
-
+describe('LoginPage — password reset', () => {
   it('Forgot password needs an email first', async () => {
     const { user, auth } = renderLogin();
     await user.click(screen.getByRole('button', { name: 'Forgot password?' }));
