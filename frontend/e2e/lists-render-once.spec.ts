@@ -43,9 +43,8 @@ test('Members: one <img> per member photo, not two', async ({ page, supabase, si
 
   await expect(page.locator('img.members-avatar-img')).toHaveCount(3);
 
-  // The list signs all its photo paths (3 members x original + thumbnail = 6) in ONE batched call. (A
-  // second, smaller sign call also happens: AppShell's Action Center badge fetch signs the photos of every
-  // member in the queue just to show a count — a known inefficiency, separate from this render-once rule.)
+  // The list signs all its photo paths (3 members x original + thumbnail = 6) in ONE batched call. (The
+  // Action Center badge is a count-only request, so it signs nothing.)
   const batches = supabase
     .calls('/storage/v1/object/sign/member-photos')
     .map((call) => (call.body as { paths: string[] }).paths);

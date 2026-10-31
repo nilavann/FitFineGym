@@ -5,6 +5,7 @@ import { addDays, addMonths, todayDate } from '../lib/datetime';
 import { fakeServices } from '../test/fakes';
 import { renderRoutes, type RenderOptions } from '../test/render';
 import { buildMemberListRow } from '../test/builders';
+import { REMINDER_TEMPLATES } from '../lib/reminder-templates';
 import { MOBILE_WIDTH } from '../test/viewport';
 import type { MemberListRow } from '../types/member-list';
 
@@ -179,5 +180,56 @@ describe('ActionCenterPage — carousel (README §Action Center)', () => {
     await user.click(screen.getByRole('button', { name: /^Expired/ }));
     await user.click(screen.getByRole('button', { name: /Expiring soon/ }));
     expect(getActionCenterQueue).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('ActionCenterPage — WhatsApp reminder', () => {
+  const messageOf = (name: string) =>
+    new URL(screen.getByRole('link', { name: `Remind ${name} on WhatsApp` }).getAttribute('href')!).searchParams.get('text')!;
+
+  it('each card has a Remind link that opens WhatsApp to that member', async () => {
+    renderQueue();
+    await ready();
+
+    const link = screen.getByRole('link', { name: 'Remind Due Soon on WhatsApp' });
+    expect(link).toHaveAttribute('target', '_blank');
+    expect(link).toHaveAttribute('rel', expect.stringContaining('noopener'));
+    const url = new URL(link.getAttribute('href')!);
+    expect(url.origin + url.pathname).toBe('https://wa.me/919000000003');
+  });
+
+  it('an expiring member gets the expiring template: greeting, name, plan, date and quote', async () => {
+    renderQueue();
+    await ready();
+
+    const text = messageOf('Due Soon');
+    expect(text).toContain('Hello *Due Soon*');
+    expect(text).toContain('*Monthly*');
+    expect(text).toContain('ends on');
+    expect(text).toContain(REMINDER_TEMPLATES.expiring.quote);
+  });
+
+  it('a lapsed member gets the expired template', async () => {
+    const { user } = renderQueue();
+    await ready();
+    await user.click(screen.getByRole('button', { name: /^Expired/ }));
+
+    const text = messageOf('Recently Lapsed');
+    expect(text).toContain('Hello *Recently Lapsed*');
+    expect(text).toContain('ended on');
+    expect(text).toContain(REMINDER_TEMPLATES.expired.quote);
+  });
+
+  it('has no Copy message option', async () => {
+    renderQueue();
+    await ready();
+    expect(screen.queryByRole('button', { name: /copy/i })).not.toBeInTheDocument();
+  });
+
+  it('shows no Remind link for a phone that is not 10 digits', async () => {
+    renderQueue({ queue: [{ ...dueSoon, phone: '12345' }] });
+    await ready();
+    expect(screen.getByText('Due Soon')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /on WhatsApp/ })).not.toBeInTheDocument();
   });
 });

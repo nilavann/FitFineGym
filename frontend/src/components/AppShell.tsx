@@ -1,4 +1,4 @@
-import { Outlet, ScrollRestoration, useMatches } from 'react-router-dom';
+import { Outlet, ScrollRestoration, useLocation, useMatches } from 'react-router-dom';
 import { useServices } from '../context/services.context';
 import { useActionCenterCount } from '../lib/action-center';
 import { shouldHideTabBar } from '../lib/route-handle';
@@ -27,7 +27,7 @@ export function AppShell() {
   // Fetched ONCE, here, in the one component that is always mounted, and passed down as a prop. Had
   // the tab bar owned this, it would refetch every time it remounted (leaving a drill-in screen,
   // rotating across 768px) — CLAUDE.md "Responsive rendering rules" #3.
-  const actionCenterCount = useActionCenterCount(memberListRepository);
+  const actionCenterCount = useActionCenterCount(memberListRepository, useLocation().pathname);
   const items = useVisibleNavItems();
   const isTabletUp = useIsTabletUp();
   const hideTabBar = shouldHideTabBar(useMatches());

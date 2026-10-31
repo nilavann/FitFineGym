@@ -36,6 +36,21 @@ export const memberListRepository = {
     if (error) throw new Error(error.message);
     return resolvePhotoUrls((data ?? []) as unknown as MemberListRow[]);
   },
+
+  /**
+   * How many members are in the Action Center queue - for the nav badge, which only shows a number. A HEAD request
+   * with `count=exact` on the same view and window as getActionCenterQueue(): no rows come back and no photo URLs
+   * are signed, so the badge costs one small round trip instead of the whole list plus a Storage call.
+   */
+  async getActionCenterCount({ from, to }: { from: string; to: string }): Promise<number> {
+    const { count, error } = await supabase
+      .from('member_list_view')
+      .select('id', { count: 'exact', head: true })
+      .gte('current_membership_end_date', from)
+      .lte('current_membership_end_date', to);
+    if (error) throw new Error(error.message);
+    return count ?? 0;
+  },
 };
 
 export type MemberListRepository = typeof memberListRepository;

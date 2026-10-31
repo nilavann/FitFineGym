@@ -60,10 +60,7 @@ const AA = 4.5;
 // ---- tests -------------------------------------------------------------------------------------
 
 describe('no hex literals outside tokens.css (rule 14)', () => {
-  // Google's brand mark: its four colours are mandated by Google's branding rules, not by this theme.
-  const ALLOWED: Record<string, string[]> = {
-    '/src/pages/LoginPage.tsx': ['#4285F4', '#34A853', '#FBBC05', '#EA4335'],
-  };
+  const ALLOWED: Record<string, string[]> = {};
 
   it('finds none in application CSS/TS/TSX', () => {
     const offenders: string[] = [];
