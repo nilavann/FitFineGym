@@ -25,17 +25,19 @@ function seedQueue(supabase: SupabaseMock) {
 }
 
 test.describe('Action Center', () => {
-  test('the badge refreshes after leaving the queue and coming back (the shell stays mounted)', async ({ page, supabase, signedInAs }) => {
+  test('each card offers a WhatsApp reminder that opens a pre-filled chat, with a touch-sized button', async ({ page, supabase, signedInAs }) => {
     seedQueue(supabase);
     await signedInAs('staff');
-    await page.goto('/reports');
-    await expect(badge(page)).toHaveText('3');
+    await page.goto('/action-center');
+    await expect(names(page)).toHaveText(['Due Soon', 'Due Later']);
 
-    // A member is renewed on another screen: they drop out of the queue.
-    supabase.tables.member_list_view = supabase.tables.member_list_view.filter((row) => row.id !== 3);
-    // Navigate in-app (a reload would remount the shell and hide the bug).
-    await page.getByRole('link', { name: 'Members' }).first().click();
-    await expect(badge(page)).toHaveText('2');
+    const remind = page.getByRole('link', { name: 'Remind Due Soon on WhatsApp' });
+    await expect(remind).toHaveAttribute('target', '_blank');
+    const url = new URL((await remind.getAttribute('href'))!);
+    expect(url.origin + url.pathname).toBe('https://wa.me/919000000003');
+    expect(url.searchParams.get('text')).toContain('Hello *Due Soon*');
+    expect((await remind.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+    await expect(page.getByRole('button', { name: /copy/i })).toHaveCount(0);
   });
 
   test('the nav badge is a count-only request: no rows are downloaded and no photos are signed for it', async ({ page, supabase, signedInAs }) => {

@@ -91,7 +91,7 @@ Follows the same fetch/loading/error shape as [`MembersListPage.tsx`](../../fron
 ### 5.1 Header
 
 - Title "Action Center" + sub-line: "Memberships expiring in the next 30 days and everything that expired in the last 12 months, newest expiry first."
-- "Send renewal reminders" button — **ships disabled** (`--color-interactive-disabled-bg`/`-text`, `cursor: not-allowed`, `title="Coming soon"`). No backend call wired; this is a placeholder for a future phase.
+- "Send renewal reminders" (bulk) button — **ships disabled** (`--color-interactive-disabled-bg`/`-text`, `cursor: not-allowed`, `title="Coming soon"`). No backend call wired; bulk sending is a future phase (see §6). Per-member reminders are on each card, see §5.5.
 
 ### 5.2 Summary cards
 
@@ -123,6 +123,7 @@ Horizontal scroll-snap row (`overflow-x: auto`, `scroll-snap-type: x mandatory`,
 │  Expiry 4 Sep 2026                     │
 │                                         │
 │  [ Renew ]        [ View ]             │
+│  [ Remind on WhatsApp ]                │
 └───────────────────────────────────────┘
 ```
 
@@ -136,6 +137,9 @@ Horizontal scroll-snap row (`overflow-x: auto`, `scroll-snap-type: x mandatory`,
 | Absolute expiry line | `formatDate(current_membership_end_date)` | Plain "Expiry 4 Sep 2026" text, distinct from the relative-label pill above it |
 | Renew button | `navigate('/members/:id/renew')` | Reuses the existing route — no new screen |
 | View button | `navigate('/members/:id')` | Reuses the existing route — no new screen |
+| Remind link | `https://wa.me/91<phone>?text=<message>` (`buildWhatsAppUrl`, `lib/reminder.ts`), opens in a new tab | Click-to-chat: WhatsApp opens on the staff member's own account with the message filled in and they press send. Nothing is sent by the app, so there is no delivery record. Hidden when `phone` is not exactly 10 digits (`chk_members_phone_format` makes that the norm; the `91` country code follows from it) |
+
+**Reminder wording** lives in one file, `frontend/src/lib/reminder-templates.ts`: an `expiring` template (membership still running, including its last day) and an `expired` one. Each is a formatted WhatsApp message (`*bold*`, `_italic_`) with a greeting, the member's name, plan and expiry date, a motivational line, and a sign-off. `buildReminderMessage` (`lib/reminder.ts`) picks the template by comparing the end date with today and fills the `{{name}}`, `{{plan}}`, `{{date}}`, `{{gym}}` and `{{quote}}` placeholders. Change the wording by editing that file only. The gym name and the `91` country code are constants in `lib/reminder.ts`; move them to the `configuration` table if the app ever serves more than one gym or country.
 
 ### 5.6 Empty states
 
@@ -150,7 +154,7 @@ Per tab (dashed card, clock icon):
 
 ## 6. Explicitly out of scope
 
-- **"Send renewal reminders" backend**: ships disabled everywhere in this pass — no Edge Function, no notification plumbing. Resolved by the design handoff itself, not a gap to fill later without an explicit decision to do so.
+- **Bulk "Send renewal reminders" backend**: the header button stays disabled - no Edge Function, no notification plumbing, no WhatsApp Business API or SMS provider. Per-member click-to-chat reminders (§5.5) are the only reminder feature. Bulk or automatic sending needs an explicit decision (provider, templates, member consent) first.
 - **Subscription overlap enforcement, plan/branch deletion guards, audit fields, deleting**: none of that applies here — this screen has no write path at all, only two existing routes (`/members/:id/renew`, `/members/:id`) it links to.
 - **An "All" tab or a merged upcoming+expired list**: deliberately absent — see §5.3.
 

@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, Clock, Eye, RefreshCw, Repeat, WifiOff } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Clock, Eye, MessageCircle, RefreshCw, Repeat, WifiOff } from 'lucide-react';
 import { useServices } from '../context/services.context';
 import { withTimeout } from '../lib/with-timeout';
 import { formatDate } from '../lib/datetime';
 import { getActionCenterWindow, getRelativeExpiryLabel, splitActionCenterQueue, type ExpiryTier } from '../lib/action-center';
 import { getAvatarColor, getInitials } from '../lib/avatar';
+import { buildReminderMessage, buildWhatsAppUrl } from '../lib/reminder';
 import { PhotoLightbox } from '../components/PhotoLightbox';
 import type { MemberListRow } from '../types/member-list';
 import './ActionCenterPage.css';
@@ -225,7 +226,7 @@ function ActionCenterCard({
 }) {
   const endDate = row.current_membership_end_date as string;
   const { text: relativeLabel, tier } = getRelativeExpiryLabel(endDate);
-
+  const whatsAppUrl = buildWhatsAppUrl(row.phone, buildReminderMessage({ ...row, current_membership_end_date: endDate }));
   return (
     <div className="action-center-card">
       <div className="action-center-card-header">
@@ -267,6 +268,21 @@ function ActionCenterCard({
           View
         </button>
       </div>
+
+      {whatsAppUrl && (
+        <div className="action-center-card-actions">
+          <a
+            className="action-center-card-remind"
+            href={whatsAppUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label={`Remind ${row.name} on WhatsApp`}
+          >
+            <MessageCircle size={14} strokeWidth={2} />
+            Remind on WhatsApp
+          </a>
+        </div>
+      )}
     </div>
   );
 }
