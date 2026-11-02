@@ -11,7 +11,8 @@
     "test:chromium": "playwright test --project=desktop-chrome --project=mobile-chrome --project=small-phone --project=tablet",
     "test:mobile": "playwright test --project=mobile-chrome --project=mobile-safari --project=small-phone",
     "test:report": "playwright show-report",
-    "browsers": "playwright install --with-deps chromium firefox webkit"
+    "browsers": "playwright install --with-deps chromium firefox webkit",
+    "set-domain": "node scripts/set-domain.mjs"
   },
   "devDependencies": {
     "@playwright/test": "1.63.0",

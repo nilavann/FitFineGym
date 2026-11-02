@@ -78,9 +78,36 @@ Project names match `frontend/playwright.config.ts` where they overlap.
 - `interactions.spec.ts`: language switch and persistence, calculator, veg and non-veg meal panel
   (photo swaps), program and plan dialogs, booking form validation (Indian mobile numbers) and
   success state, testimonials, film pause, mobile menu.
+- `seo.spec.ts`: title and description length, canonical, share tags and image size, structured
+  data, heading outline, crawlable images, in-page links, robots, sitemap and manifest.
 - `views.spec.ts`: one screenshot per key section in English and Tamil, attached to the HTML
   report for every project so a person can look at each viewport. These are not pixel baselines,
   because font rendering differs between operating systems.
+
+## SEO and sharing
+
+Already set up in `index.html` and the files next to it:
+
+- `<title>`, meta description, `robots`, canonical URL, `lang`, theme colour
+- Open Graph and Twitter share tags with a 1200 x 630 share image (`assets/img/og-image.jpg`)
+- `ExerciseGym` structured data (JSON-LD): name, address, phone, 5:30 AM to 10:30 PM hours, price range
+- `robots.txt`, `sitemap.xml`, `site.webmanifest` and favicon / home-screen icons
+- real `src` attributes on page images (crawlers do not need to run scripts), lazy loading below
+  the fold, and the hero photo preloaded
+- one `h1` and a clean heading outline
+
+**Before launch, point it at your real domain** (the files use `https://www.fitnfine.example`):
+
+```bash
+npm run set-domain -- https://www.yourgym.in
+```
+
+Then check the structured data values (address, phone, hours, price range) match reality, and
+register the site in Google Search Console and a Google Business Profile for local search.
+`tests/seo.spec.ts` checks all of the above and that the files agree on one origin.
+
+The language toggle is client side, so there is one URL. If you later want Tamil pages to rank
+separately, give them their own URLs (for example `/ta/`) and add `hreflang` links.
 
 ### Limits
 
