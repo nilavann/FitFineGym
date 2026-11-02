@@ -1,0 +1,92 @@
+# FitNFine website
+
+The public marketing site for FitNFine Gym: a pinned scroll hero, a training film, a weight-loss
+calculator with South Indian meal plans, programs, six membership plans, testimonials and a
+free-demo booking form. It is plain static HTML, CSS and JavaScript. There is no build step and it
+does not touch Supabase or the gym-management app in `frontend/`.
+
+English and Tamil are built in (toggle in the header). Bookings are not sent anywhere yet: the form
+validates and builds a pre-filled WhatsApp message (`https://wa.me/?text=...`) the visitor can send.
+
+## Layout
+
+```
+website/
+  index.html              the page
+  assets/
+    css/site.css          all styles (colour tokens in :root)
+    js/media.js           map of image and video paths used by app.js
+    js/app.js             behaviour: pinned hero, language, calculator, dialogs, menu
+    img/                  photos (Pexels contributors, free licence) and logo.png
+    video/film.mp4        17 s training film cut from those photos
+  tests/                  Playwright specs (below)
+  playwright.config.ts    browser and device projects
+```
+
+Colours come from the FF Gym logo: orange `#F28322`, yellow `#FCF00C`, black `#0F0F0F`.
+
+## Run it
+
+```bash
+cd website
+npm install
+npm start            # http://localhost:4174
+```
+
+## Test it
+
+```bash
+npm run browsers     # once: downloads Chromium, Firefox and WebKit (+ system deps)
+npm test             # every project below
+npm run test:chromium   # only the Chromium-based projects (no Firefox/WebKit needed)
+npm run test:mobile     # Pixel 7, iPhone 13 and the 360px phone
+npm run test:report     # open the HTML report, including the per-section screenshots
+npm run typecheck
+```
+
+The suite serves this folder with `http-server`, never reuses a running server, and answers the
+Google Fonts requests with empty files so every browser measures the same fallback fonts and the
+tests work offline.
+
+### Browser and device projects
+
+| Project | Engine | Viewport |
+|---|---|---|
+| `desktop-chrome` | Chromium | 1440 x 900 |
+| `desktop-firefox` | Firefox | 1440 x 900 |
+| `desktop-safari` | WebKit | 1440 x 900 |
+| `desktop-edge` | Microsoft Edge (opt in: `PW_EDGE=1`, needs Edge installed) | 1440 x 900 |
+| `tablet` | Chromium, touch | 820 x 1180 |
+| `tablet-safari` | WebKit, iPad (gen 7) | device default |
+| `mobile-chrome` | Chromium, Pixel 7 | device default |
+| `mobile-safari` | WebKit, iPhone 13 | device default |
+| `small-phone` | Chromium, touch | 360 x 740 |
+
+Project names match `frontend/playwright.config.ts` where they overlap.
+
+### What the specs check
+
+- `smoke.spec.ts`: metadata, no console errors or exceptions while scrolling the whole page, every
+  local asset returns 200, the logo and hero photo decode, the film is wired, images have alt text.
+- `responsive.spec.ts` (English and Tamil): no sideways scroll at any scroll position, one
+  navigation pattern at a time (links above 1000px, menu button below), plan grid columns (3, 2, 1),
+  nutrition panel stacking, 44px touch targets and 16px form fields on phones, no clipped headings.
+- `hero.spec.ts`: the pinned hero (photo card grows to full bleed, title turns white, copy and demo
+  button fade in), header tone and hide-on-scroll, and the reduced-motion version.
+- `content.spec.ts`: the six plans and their prices, discounts, the three programs, no batches
+  section, ticker words, 500+ clients and 5:30 AM to 10:30 PM timings, demo wording, WhatsApp links.
+- `interactions.spec.ts`: language switch and persistence, calculator, veg and non-veg meal panel
+  (photo swaps), program and plan dialogs, booking form validation (Indian mobile numbers) and
+  success state, testimonials, film pause, mobile menu.
+- `views.spec.ts`: one screenshot per key section in English and Tamil, attached to the HTML
+  report for every project so a person can look at each viewport. These are not pixel baselines,
+  because font rendering differs between operating systems.
+
+### Limits
+
+- WebKit is not iOS Safari. Safe-area insets, focus zoom and address-bar behaviour need a manual
+  pass on a real iPhone or a hosted preview.
+- `@playwright/test` is pinned to `1.63.0` to match the browsers pre-installed in the cloud
+  sandbox. Bump it together with `npm run browsers` on your own machine if you prefer.
+- Photos and the film are placeholders from free stock sources. All addresses, phone numbers,
+  prices, GSTIN, coach names and testimonials are samples: replace them before launch.
