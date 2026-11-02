@@ -227,5 +227,7 @@ $("#tForm").addEventListener("submit",function(e){e.preventDefault();var n=$("#t
   $("#tsent").textContent=tr("Thanks, "+n.split(" ")[0]+". This is a demo, so nothing was sent. In the real thing, this message would open in WhatsApp:","நன்றி, "+n.split(" ")[0]+". இது டெமோ, எதுவும் அனுப்பப்படவில்லை. உண்மையில் இந்தச் செய்தி வாட்ஸ்அப்பில் திறக்கும்:");
   $("#tmsg").textContent=msg;$("#tWa").href=wa(msg);trial.classList.add("done")});
 
+$("#copyAddr").onclick=function(){var a=($("#addrText").dataset.en||$("#addrText").textContent).replace(/\s+/g," ").trim();
+  try{navigator.clipboard.writeText(a).then(function(){say(tr("Address copied","முகவரி நகலெடுக்கப்பட்டது"))},function(){say(a)})}catch(e){say(a)}};
 setLang(lang,true);onScroll();heroFrame();setTimeout(onScroll,300);
 })();

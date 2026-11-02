@@ -32,6 +32,7 @@
   "@context": "https://schema.org",
   "@type": "ExerciseGym",
   "name": "FitNFine Gym",
+  "alternateName": "Fit&Fine (unisex) gym",
   "url": "https://www.fitnfine.example/",
   "logo": "https://www.fitnfine.example/assets/img/icon-512.png",
   "image": "https://www.fitnfine.example/assets/img/og-image.jpg",
@@ -64,6 +65,8 @@
     }
   ],
   "areaServed": "Tiruchengode",
+  "geo": {"@type": "GeoCoordinates", "latitude": 11.3729575, "longitude": 77.8745749},
+  "hasMap": "https://maps.app.goo.gl/YEXsZ4W4Y3BdDQwq6",
   "availableLanguage": [
     "English",
     "Tamil"
@@ -81,7 +84,7 @@
 <header class="hdr" id="hdr" data-tone="ink">
   <div class="wrap hdr-in">
     <a class="logo" href="#top" aria-label="FitNFine Gym, back to top"><img class="logo-img" src="assets/img/logo.png" decoding="async" data-img="logo" alt=""><span>fit<b>n</b>fine</span></a>
-    <nav class="nav" aria-label="Main"><a href="#programs" data-ta="திட்டங்கள்">Programs</a><a href="#calc" data-ta="கணிப்பான்">Calculator</a><a href="#plans" data-ta="கட்டணம்">Plans</a><a href="#stories" data-ta="கதைகள்">Stories</a></nav>
+    <nav class="nav" aria-label="Main"><a href="#programs" data-ta="திட்டங்கள்">Programs</a><a href="#calc" data-ta="கணிப்பான்">Calculator</a><a href="#plans" data-ta="கட்டணம்">Plans</a><a href="#stories" data-ta="கதைகள்">Stories</a><a href="#visit" data-ta="வருகை">Find us</a></nav>
     <button class="lang" id="lang" type="button" aria-label="Switch language to Tamil"><span class="on">EN</span><span>தமிழ்</span></button>
     <button class="btn sm" type="button" data-trial><span data-ta="டெமோ முன்பதிவு">Book a demo</span><i><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17L17 7M8 7h9v9"/></svg></i></button>
     <button class="burger" id="burger" type="button" aria-label="Open menu" aria-expanded="false" aria-controls="menu"><span></span><span></span></button>
@@ -89,7 +92,7 @@
 </header>
 <div class="menu" id="menu" inert>
   <nav aria-label="Mobile">
-    <a class="big" href="#programs"><b data-ta="திட்டங்கள்">Programs</b><span>01</span></a><a class="big" href="#calc"><b data-ta="கணிப்பான்">Calculator</b><span>02</span></a><a class="big" href="#plans"><b data-ta="கட்டணம்">Plans</b><span>03</span></a><a class="big" href="#stories"><b data-ta="கதைகள்">Stories</b><span>04</span></a>
+    <a class="big" href="#programs"><b data-ta="திட்டங்கள்">Programs</b><span>01</span></a><a class="big" href="#calc"><b data-ta="கணிப்பான்">Calculator</b><span>02</span></a><a class="big" href="#plans"><b data-ta="கட்டணம்">Plans</b><span>03</span></a><a class="big" href="#stories"><b data-ta="கதைகள்">Stories</b><span>04</span></a><a class="big" href="#visit"><b data-ta="வருகை">Find us</b><span>05</span></a>
   </nav>
   <button class="btn light" type="button" data-trial style="align-self:flex-start"><span data-ta="டெமோ முன்பதிவு செய்யுங்கள்">Book your demo</span><i><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17L17 7M8 7h9v9"/></svg></i></button>
 </div>
@@ -246,6 +249,26 @@
     </div>
   </section>
 
+  <section class="sec visit" id="visit" aria-labelledby="vh">
+    <div class="wrap visit-grid">
+      <div class="visit-info">
+        <p class="label" data-ta="வருகை">Visit us</p>
+        <h2 id="vh" class="reveal" data-ta='எங்களை <span class="em">கண்டறியுங்கள்.</span>'>Find <span class="em">the gym.</span></h2>
+        <address class="addr" id="addrText" data-ta="45/3, வேளாளர் காலனி, கூட்டப்பள்ளி காலனி, நாமக்கல், போஸ்ட் திருச்செங்கோடு சாலை, டிசிஎஸ் நகர், திருச்செங்கோடு 637214, தமிழ்நாடு">45/3, Vellalar Colony, Koottapalli Colony, Namakkal, Post Tiruchengode Road, TCS Nagar, Tiruchengode 637214, Tamil Nadu</address>
+        <dl class="hrs"><div><dt data-ta="திறந்திருக்கும் நேரம்">Open</dt><dd data-ta="தினமும் காலை 5:30 முதல் இரவு 10:00 வரை">Every day, 5:30 AM to 10:00 PM</dd></div></dl>
+        <div class="visit-actions">
+          <a class="btn" id="mapOpen" href="https://maps.app.goo.gl/YEXsZ4W4Y3BdDQwq6" target="_blank" rel="noopener"><span data-ta="கூகுள் மேப்ஸில் திற">Open in Google Maps</span><i><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17L17 7M8 7h9v9"/></svg></i></a>
+          <a class="btn line" id="mapDir" href="https://www.google.com/maps/dir/?api=1&amp;destination=11.3729575,77.8745749" target="_blank" rel="noopener"><span data-ta="வழித்தடம் பெறுங்கள்">Get directions</span><i><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17L17 7M8 7h9v9"/></svg></i></a>
+          <button class="btn line" id="copyAddr" type="button"><span data-ta="முகவரியை நகலெடு">Copy address</span><i><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17L17 7M8 7h9v9"/></svg></i></button>
+        </div>
+      </div>
+      <div class="map-card">
+        <div class="map-fallback" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 21s7-6.2 7-11a7 7 0 0 0-14 0c0 4.8 7 11 7 11z"/><circle cx="12" cy="10" r="2.5"/></svg><span>FitNFine Gym</span></div>
+        <iframe id="mapFrame" title="Map showing the FitNFine Gym location in Tiruchengode" src="https://www.google.com/maps?q=11.3729575,77.8745749&amp;z=17&amp;hl=en&amp;output=embed" loading="lazy" referrerpolicy="no-referrer-when-downgrade" allowfullscreen></iframe>
+      </div>
+    </div>
+  </section>
+
   <section class="sec cta" aria-labelledby="ctah">
     <img src="assets/img/floor.jpg" decoding="async" loading="lazy" data-img="floor" alt="">
     <div class="wrap">
@@ -262,7 +285,7 @@
     <div class="fgrid">
       <div><a class="logo logo-lg" href="#top" style="color:#fff;font-size:2rem"><img class="logo-img" src="assets/img/logo.png" decoding="async" data-img="logo" alt="FitNFine Gym logo"><span>fit<b>n</b>fine</span></a><p style="max-width:20rem;margin:1rem 0 0;font-size:15px" data-ta="நீடித்த முடிவுகளை விரும்புபவர்களுக்கு வலிமை, கார்டியோ, ஊட்டச்சத்து பயிற்சி.">Strength, cardio and nutrition coaching for people who want results that last.</p></div>
       <div><h3 data-ta="திட்டங்கள்">Programs</h3><ul><li><a href="#programs">Lift</a></li><li><a href="#programs">Burn &middot; Kuthu Fit</a></li><li><a href="#programs">Fuel</a></li></ul></div>
-      <div><h3 data-ta="வருகை">Visit</h3><ul><li data-ta="45/3, வேளாளர் காலனி, கூட்டப்பள்ளி காலனி, நாமக்கல், போஸ்ட் திருச்செங்கோடு சாலை, டிசிஎஸ் நகர்">45/3, Vellalar Colony, Koottapalli Colony, Namakkal, Post Tiruchengode Road, TCS Nagar</li><li data-ta="திருச்செங்கோடு 637214, தமிழ்நாடு">Tiruchengode 637214, Tamil Nadu</li><li data-ta="தினமும் காலை 5:30 முதல் இரவு 10:00 வரை">Every day, 5:30 AM to 10:00 PM</li></ul></div>
+      <div><h3 data-ta="வருகை">Visit</h3><ul><li data-ta="45/3, வேளாளர் காலனி, கூட்டப்பள்ளி காலனி, நாமக்கல், போஸ்ட் திருச்செங்கோடு சாலை, டிசிஎஸ் நகர்">45/3, Vellalar Colony, Koottapalli Colony, Namakkal, Post Tiruchengode Road, TCS Nagar</li><li data-ta="திருச்செங்கோடு 637214, தமிழ்நாடு">Tiruchengode 637214, Tamil Nadu</li><li data-ta="தினமும் காலை 5:30 முதல் இரவு 10:00 வரை">Every day, 5:30 AM to 10:00 PM</li><li><a id="footDir" href="https://www.google.com/maps/dir/?api=1&amp;destination=11.3729575,77.8745749" target="_blank" rel="noopener" data-ta="வழித்தடம் பெறுங்கள்">Get directions</a></li></ul></div>
       <div><h3 data-ta="தொடர்புக்கு">Contact</h3><ul><li>hello@fitnfine.example</li><li>+91 98765 43210</li><li><a id="waFoot" href="#" target="_blank" rel="noopener">WhatsApp</a></li></ul></div>
     </div>
     <div class="fbot"><span data-ta="© 2026 FitNFine. வடிவமைப்புப் பயிற்சி; விவரங்கள் மாதிரி. GSTIN: 33AAAAA0000A1Z5 (மாதிரி)">&copy; 2026 FitNFine. A design exercise with placeholder details. GSTIN: 33AAAAA0000A1Z5 (sample)</span><span>Photos: Pexels contributors, free licence.</span></div>

@@ -80,6 +80,8 @@ Project names match `frontend/playwright.config.ts` where they overlap.
   success state, testimonials, film pause, mobile menu.
 - `seo.spec.ts`: title and description length, canonical, share tags and image size, structured
   data, heading outline, crawlable images, in-page links, robots, sitemap and manifest.
+- `location.spec.ts`: the Find the gym section, map embed at the exact pin, Google Maps and
+  directions links, copy-address button, map data in the structured data, nav link, Tamil text.
 - `views.spec.ts`: one screenshot per key section in English and Tamil, attached to the HTML
   report for every project so a person can look at each viewport. These are not pixel baselines,
   because font rendering differs between operating systems.
@@ -108,6 +110,18 @@ register the site in Google Search Console and a Google Business Profile for loc
 
 The language toggle is client side, so there is one URL. If you later want Tamil pages to rank
 separately, give them their own URLs (for example `/ta/`) and add `hreflang` links.
+
+## Location
+
+The gym is "Fit&Fine (unisex) gym" on Google Maps (https://maps.app.goo.gl/YEXsZ4W4Y3BdDQwq6),
+pinned at 11.3729575, 77.8745749. The Find the gym section shows the address and hours, an embedded
+map (Google's no-key embed, loaded lazily), and buttons for the Maps listing, turn-by-turn
+directions and copying the address. The footer has a Get directions link, and the JSON-LD carries
+`geo`, `hasMap` and the Maps listing name as `alternateName`.
+
+The tests stub the Google Maps request so they never depend on a third-party page. If the pin ever
+moves, update the coordinates in `index.html` (iframe, directions links, JSON-LD) and in
+`tests/location.spec.ts`.
 
 ### Limits
 

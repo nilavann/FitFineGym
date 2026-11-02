@@ -20,6 +20,10 @@ export const test = base.extend<Fixtures>({
         body: '',
       }),
     );
+    // The Google Maps embed is stubbed too, so tests never depend on a third-party page.
+    await page.route(/www\.google\.com\/maps/, (route) =>
+      route.fulfill({ status: 200, contentType: 'text/html', body: '<!doctype html><title>map</title><body>map</body>' }),
+    );
     await page.addInitScript((l) => {
       try {
         // Seed only the first visit, so a reload still shows what the visitor chose.

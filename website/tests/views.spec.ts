@@ -11,6 +11,7 @@ const sections = [
   ['programs', '#programs'],
   ['plans', '#planGrid'],
   ['stories', '#stories'],
+  ['visit', '#visit'],
   ['contact', '.cta'],
   ['footer', 'footer'],
 ] as const;
