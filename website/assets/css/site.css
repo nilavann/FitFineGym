@@ -375,3 +375,6 @@ dialog.tr{max-height:calc(100% - 1.5rem);overflow-y:auto;overscroll-behavior:con
 /* ---- narrow headers: keep the language toggle and menu button at full 44px size ---- */
 .burger,.lang{flex:none}
 @media (width<=1000px){.hdr-in{gap:.75rem}.logo{min-width:0}}
+
+/* ---- footer: the brand block takes the full row on narrow screens so the wordmark cannot run into the link columns ---- */
+@media (width<=1000px){.fgrid>div:first-child{grid-column:1/-1}}

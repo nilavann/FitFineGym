@@ -112,4 +112,25 @@ test.describe('responsive layout', () => {
     );
     expect(clipped).toEqual([]);
   });
+
+  test('the footer wordmark does not run into the link columns', async ({ page }) => {
+    await openSite(page);
+    // Measure the wordmark text and the logo image themselves: the text can overflow its own link box.
+    const boxes = await page.evaluate(() => {
+      const rect = (el: Element) => el.getBoundingClientRect().toJSON();
+      const grid = document.querySelector('footer .fgrid')!;
+      return {
+        brand: [rect(document.querySelector('footer .logo span')!), rect(document.querySelector('footer .logo img')!)],
+        others: Array.from(grid.children)
+          .slice(1)
+          .map((c) => rect(c)),
+      };
+    });
+    for (const part of boxes.brand) {
+      for (const other of boxes.others) {
+        const apart = part.right <= other.left + 1 || part.bottom <= other.top + 1 || other.right <= part.left + 1;
+        expect(apart, `brand ${JSON.stringify(part)} vs column ${JSON.stringify(other)}`).toBe(true);
+      }
+    }
+  });
 });

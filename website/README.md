@@ -74,7 +74,7 @@ Project names match `frontend/playwright.config.ts` where they overlap.
 - `hero.spec.ts`: the pinned hero (photo card grows to full bleed, title turns white, copy and demo
   button fade in), header tone and hide-on-scroll, and the reduced-motion version.
 - `content.spec.ts`: the six plans and their prices, discounts, the three programs, no batches
-  section, ticker words, 500+ clients and 5:30 AM to 10:30 PM timings, demo wording, WhatsApp links.
+  section, ticker words, 500+ clients and 5:30 AM to 10:00 PM timings, demo wording, WhatsApp links.
 - `interactions.spec.ts`: language switch and persistence, calculator, veg and non-veg meal panel
   (photo swaps), program and plan dialogs, booking form validation (Indian mobile numbers) and
   success state, testimonials, film pause, mobile menu.
@@ -90,7 +90,7 @@ Already set up in `index.html` and the files next to it:
 
 - `<title>`, meta description, `robots`, canonical URL, `lang`, theme colour
 - Open Graph and Twitter share tags with a 1200 x 630 share image (`assets/img/og-image.jpg`)
-- `ExerciseGym` structured data (JSON-LD): name, address, phone, 5:30 AM to 10:30 PM hours, price range
+- `ExerciseGym` structured data (JSON-LD): name, address, phone, 5:30 AM to 10:00 PM hours, price range
 - `robots.txt`, `sitemap.xml`, `site.webmanifest` and favicon / home-screen icons
 - real `src` attributes on page images (crawlers do not need to run scripts), lazy loading below
   the fold, and the hero photo preloaded

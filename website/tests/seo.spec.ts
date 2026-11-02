@@ -60,7 +60,7 @@ test.describe('SEO', () => {
     expect(data.address['@type']).toBe('PostalAddress');
     expect(data.address.addressCountry).toBe('IN');
     expect(data.openingHoursSpecification[0].opens).toBe('05:30');
-    expect(data.openingHoursSpecification[0].closes).toBe('22:30');
+    expect(data.openingHoursSpecification[0].closes).toBe('22:00');
   });
 
   test('has exactly one h1 and a sensible heading outline', async ({ page }) => {

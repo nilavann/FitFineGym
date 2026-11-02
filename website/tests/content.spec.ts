@@ -57,15 +57,15 @@ test.describe('content', () => {
     expect(new Set(words)).toEqual(new Set(['Lift', 'Millet meals', 'Weight loss', 'Strength', 'Cardio']));
   });
 
-  test('states 500+ clients and the 5:30 AM to 10:30 PM timings', async ({ page }) => {
+  test('states 500+ clients and the 5:30 AM to 10:00 PM timings', async ({ page }) => {
     await openSite(page);
     const clients = page.locator('.stat strong[data-n="500"]');
     await clients.scrollIntoViewIfNeeded();
     await expect(clients).toHaveText('500+', { timeout: 6000 });
     const time = page.locator('.stat strong.time');
     await expect(time).toContainText('5:30 AM');
-    await expect(time).toContainText('10:30 PM');
-    await expect(page.locator('footer')).toContainText('Every day, 5:30 AM to 10:30 PM');
+    await expect(time).toContainText('10:00 PM');
+    await expect(page.locator('footer')).toContainText('Every day, 5:30 AM to 10:00 PM');
     await expect(page.locator('#why')).not.toContainText('Sample figures');
   });
 
@@ -104,5 +104,26 @@ test.describe('content', () => {
     await expect(dialog).toContainText('Priya Raman');
     await expect(dialog).not.toContainText('Silambam');
     await expect(dialog).not.toContainText('yoga');
+  });
+
+  test('shows the Tiruchengode address and nothing from the old one', async ({ page }) => {
+    await openSite(page);
+    const footer = page.locator('footer');
+    await expect(footer).toContainText('45/3, Vellalar Colony, Koottapalli Colony, Namakkal, Post Tiruchengode Road, TCS Nagar');
+    await expect(footer).toContainText('Tiruchengode 637214, Tamil Nadu');
+    for (const old of ['Coimbatore', 'RS Puram', 'Park Avenue', '641002']) {
+      await expect(page.locator('body'), old).not.toContainText(old);
+    }
+    const ld = JSON.parse((await page.locator('script[type="application/ld+json"]').first().textContent())!);
+    expect(ld.address.postalCode).toBe('637214');
+    expect(ld.address.addressLocality).toBe('Tiruchengode');
+    expect(ld.address.streetAddress).toContain('Vellalar Colony');
+  });
+
+  test('the footer address and hours are in Tamil when the language is Tamil', async ({ page }) => {
+    await page.addInitScript(() => localStorage.setItem('fnf-lang', 'ta'));
+    await openSite(page);
+    await expect(page.locator('footer')).toContainText('திருச்செங்கோடு 637214, தமிழ்நாடு');
+    await expect(page.locator('footer')).toContainText('இரவு 10:00');
   });
 });
