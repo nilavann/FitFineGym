@@ -1,0 +1,23 @@
+{
+  "name": "fitnfine-website",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Static marketing website for FitNFine Gym, with Playwright cross-browser and mobile view tests.",
+  "scripts": {
+    "start": "http-server . -p 4174 -c-1 --silent",
+    "typecheck": "tsc --noEmit",
+    "test": "playwright test",
+    "test:ui": "playwright test --ui",
+    "test:chromium": "playwright test --project=desktop-chrome --project=mobile-chrome --project=small-phone --project=tablet",
+    "test:mobile": "playwright test --project=mobile-chrome --project=mobile-safari --project=small-phone",
+    "test:report": "playwright show-report",
+    "browsers": "playwright install --with-deps chromium firefox webkit",
+    "set-domain": "node scripts/set-domain.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "@types/node": "^20.16.11",
+    "http-server": "^14.1.1",
+    "typescript": "^5.6.3"
+  }
+}
